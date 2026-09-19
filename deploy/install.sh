@@ -35,7 +35,12 @@ if [ "$(uname -s)" = "Darwin" ]; then
   mkdir -p ~/Library/LaunchAgents
   PLIST=~/Library/LaunchAgents/$APP.plist
   sed "s|@DIR@|$HERE|g; s|@BUN@|$BUN|g" deploy/app.plist > "$PLIST"
+  # Unload the old copy and wait for launchd to let go of it before loading the new plist.
   launchctl bootout "gui/$(id -u)/$APP" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    launchctl print "gui/$(id -u)/$APP" >/dev/null 2>&1 || break
+    sleep 0.5
+  done
   launchctl bootstrap "gui/$(id -u)" "$PLIST"
   wait_healthy && exit 0
   echo "$APP is not answering on 127.0.0.1:$PORT_; see: tail -50 $HERE/data/ai-usage.log" >&2
