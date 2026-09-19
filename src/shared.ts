@@ -190,6 +190,13 @@ export class Shared {
       return this.machines();
     }
     const names = [...new Set(keys.filter((k) => k.endsWith("/manifest.json")).map((k) => k.slice(0, -"/manifest.json".length)))].filter((n) => n !== this.machine && KEY_SAFE.test(n));
+    // A machine whose directory is gone (renamed, retired, cleaned up) leaves the status list; its rows stay.
+    for (const m of this.machines())
+      if (!names.includes(m.name)) {
+        this.store.deleteMeta(`${META}machine:${m.name}`);
+        this.store.deleteMeta(`${META}seen:${m.name}`);
+        this.log(`shared: ${m.name} is no longer in the store; forgotten`);
+      }
     for (const name of names) {
       const prev = this.machineState(name);
       try {

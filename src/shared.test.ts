@@ -83,6 +83,10 @@ describe("shared store", () => {
     expect(r.pulled[1]?.error).toMatch(/missing/);
     expect(store.machines()).toEqual([{ machine: "ok", turns: 1 }]);
     expect(s.lastSyncAt()).toBe(NOW);
+    // Directories that disappear are forgotten on the next pull; their rows stay.
+    for (const k of [...objects.objects.keys()]) if (k.startsWith("ok/") || k.startsWith("bad/")) objects.objects.delete(k);
+    expect((await s.sync(true)).pulled.map((m) => m.name)).toEqual(["gone"]);
+    expect(store.machines()).toEqual([{ machine: "ok", turns: 1 }]);
     expect(() => new Shared({ store, objects, machine: "bad name" })).toThrow(/machine name/);
     store.close();
   });

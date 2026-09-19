@@ -263,6 +263,10 @@ export class Store {
     this.db.query("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(key, value);
   }
 
+  deleteMeta(key: string): void {
+    this.db.query("DELETE FROM meta WHERE key = ?").run(key);
+  }
+
   /** Every meta key with a prefix, for the per-peer pull states. */
   metaWithPrefix(prefix: string): Record<string, string> {
     const rows = this.db.query<{ key: string; value: string }, [string]>("SELECT key, value FROM meta WHERE key LIKE ? || '%'").all(prefix);
