@@ -40,6 +40,8 @@ export type SharedOptions = {
   machine: string;
   /** Sync no more often than this unless forced. */
   intervalMs?: number;
+  /** A collector publishes its own rows and never reads the others'. */
+  publishOnly?: boolean;
   now?: () => number;
   log?: (line: string) => void;
 };
@@ -114,6 +116,7 @@ export class Shared {
   private readonly objects: ObjectStore;
   readonly machine: string;
   private readonly intervalMs: number;
+  readonly publishOnly: boolean;
   private readonly now: () => number;
   private readonly log: (line: string) => void;
   private inflight: Promise<SyncResult> | null = null;
@@ -124,6 +127,7 @@ export class Shared {
     this.objects = opts.objects;
     this.machine = opts.machine;
     this.intervalMs = opts.intervalMs ?? 30 * 60_000;
+    this.publishOnly = opts.publishOnly ?? false;
     this.now = opts.now ?? Date.now;
     this.log = opts.log ?? (() => {});
   }
@@ -145,7 +149,7 @@ export class Shared {
 
   private async doSync(): Promise<SyncResult> {
     const published = await this.publish();
-    const pulled = await this.pull();
+    const pulled = this.publishOnly ? [] : await this.pull();
     this.store.setMeta(`${META}last`, String(this.now()));
     return { published, pulled, skipped: false };
   }

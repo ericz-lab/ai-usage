@@ -22,6 +22,10 @@ import type { Store } from "./store.ts";
  *
  * Reads trust loopback; there is no token (the edge holds the login, and a
  * peer's export is reached through the space's authenticated peer channel).
+ *
+ * A collector (USAGE_ROLE=collector) serves only /healthz, /api/status,
+ * /api/refresh and /api/export: it scans and publishes, and the page, the
+ * summary and the widget answer 404 with a line saying where the dashboard is.
  */
 
 export const VERSION = "0.1.0";
@@ -93,6 +97,7 @@ export function createApp(opts: ServerOptions) {
     ok: true,
     version: VERSION,
     machine,
+    role: config.role,
     pricingAsOf: PRICING_AS_OF,
     sources: config.sources,
     ...store.counts(),
@@ -165,6 +170,15 @@ export function createApp(opts: ServerOptions) {
       },
     },
   };
+  if (config.role === "collector") {
+    const off = () => new Response(`ai-usage on ${machine} is a collector: it scans and publishes; open the dashboard on the machine that has one.\n`, { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+    delete routes["/api/summary"];
+    delete routes["/api/widget"];
+    routes["/"] = off;
+    routes["/api/summary"] = off;
+    routes["/api/widget"] = off;
+    return { routes, scan, refresh, status };
+  }
   if (opts.page) routes["/"] = opts.page;
   routes["/icon.svg"] = () => new Response(Bun.file(new URL("../icon.svg", import.meta.url)), { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
 

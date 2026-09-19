@@ -16,6 +16,7 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 - Bun + TypeScript, React 19 for the page, no other dependency. `src/index.ts` is the entry point (`Bun.serve` with the HTML import of `web/index.html`, `bun:sqlite`).
 - A scan runs on boot, every `USAGE_SCAN_INTERVAL` seconds, on `POST /api/refresh`, and before any read when the last scan is older than a minute. It is incremental: each file is tracked by size, mtime and the byte offset consumed, and only appended bytes are read (a partial last line waits until the file has been quiet for ten seconds). A full first scan of a year of transcripts takes well under a second per hundred megabytes.
 - The shared store (`src/shared.ts`) is on when `BLOB_URL` is an s3 prefix: after a scan, publish this machine's rows (`<machine>/turns/<utc day>.jsonl`, `sessions.jsonl`, `agents.jsonl`, `manifest.json` with content hashes) and pull every other machine's changed files, at most every `USAGE_SYNC_INTERVAL` seconds unless the Refresh button forces it. State lives in `meta` (`shared:published`, `shared:seen:<machine>`, `shared:machine:<machine>`, `shared:last`).
+- `USAGE_ROLE=collector` (`config.ts`): the shared store is publish-only and `server.ts` registers no page, summary or widget route (they answer 404 with a line). Status, refresh, export and healthz stay.
 - Without a shared store, peers are pulled after every scan (`src/peers.ts`): discovery through `SPACE_API_URL` (`GET /api/apps?all=1`, entries named `ai-usage` with a `peer`) plus `USAGE_PEERS`; each pull asks `/api/export?since=` from the newest row held for that machine minus two days; results are upserted and the outcome kept in `meta` (`peer:<name>`).
 - Runs as the user-level systemd unit `ai-usage` from `~/.ai-space/apps/ai-usage`, port 8880, health `GET /healthz`.
 
@@ -72,6 +73,7 @@ bash deploy/install.sh            # install the user unit on a server
 | `DATABASE_URL` | `sqlite://<path>` of the cache (ai-space sets it) | `$SPACE_APP_DATA_DIR/usage.db`, else `data/usage.db` |
 | `USAGE_SOURCES` | comma-separated transcript directories | `~/.claude/projects` and the Xcode integration directory |
 | `USAGE_SCAN_INTERVAL` | seconds between scans | 300 |
+| `USAGE_ROLE` | `dashboard` (everything) or `collector` (scan and publish only; no page, no pulls) | dashboard |
 | `USAGE_SYNC_INTERVAL` | seconds between shared-store syncs | 1800 |
 | `USAGE_MACHINE` | this machine's name on the dashboard and in the shared store | `SPACE_NAME`, else the hostname |
 | `BLOB_URL`, `S3_*` | the shared store (ai-space sets them from `storage.blobs`) | none = local only |

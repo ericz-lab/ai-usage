@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { Config } from "./config.ts";
+import { type Config, loadConfig } from "./config.ts";
 import { Peers, parsePeerList } from "./peers.ts";
 import { PRICES, costOf, priceFor, shortModel } from "./pricing.ts";
 import type { ScanResult } from "./scanner.ts";
@@ -8,7 +8,7 @@ import { Store } from "./store.ts";
 
 const H = 3_600_000;
 const NOW = Date.parse("2026-09-19T10:00:00Z");
-const config: Config = { port: 0, dbPath: ":memory:", sources: ["/nowhere"], scanIntervalMs: 60_000 };
+const config: Config = { port: 0, role: "dashboard", dbPath: ":memory:", sources: ["/nowhere"], scanIntervalMs: 60_000 };
 const scanResult: ScanResult = { sources: [], files: 0, newFiles: 0, updatedFiles: 0, turns: 0, sessions: 0, dispatches: 0, ms: 1 };
 
 function seed(store: Store, machineTurns = 0): void {
@@ -107,6 +107,39 @@ describe("routes", () => {
     expect(items[0]?.text).toMatch(/^Today · 1\.1K tokens · \$0\.005 · 2 sessions$/);
     expect(items[1]?.text).toContain("2 machines");
     expect(items[2]?.text).toMatch(/^Top model · claude-sonnet-5/);
+  });
+});
+
+describe("loadConfig", () => {
+  test("role defaults to dashboard and rejects other values", () => {
+    expect(loadConfig({}, "/home/x").role).toBe("dashboard");
+    expect(loadConfig({ USAGE_ROLE: " Collector " }, "/home/x").role).toBe("collector");
+    expect(() => loadConfig({ USAGE_ROLE: "viewer" }, "/home/x")).toThrow(/USAGE_ROLE/);
+  });
+});
+
+describe("collector role", () => {
+  test("serves status, refresh and export; the page, the summary and the widget are off", async () => {
+    const store = new Store(":memory:");
+    seed(store);
+    const app = createApp({ store, config: { ...config, role: "collector" }, machine: "box", page: "<html/>", now: () => NOW, log: () => {}, scan: async () => scanResult });
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", routes: app.routes as never });
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+      expect((await fetch(`${base}/healthz`)).status).toBe(200);
+      expect(((await (await fetch(`${base}/api/status`)).json()) as { role: string }).role).toBe("collector");
+      store.setMeta("last_scan", String(NOW));
+      expect(((await (await fetch(`${base}/api/export?since=0`)).json()) as { turns: unknown[] }).turns).toHaveLength(1);
+      expect((await fetch(`${base}/api/refresh`, { method: "POST" })).status).toBe(200);
+      for (const path of ["/", "/api/summary?range=7d", "/api/widget"]) {
+        const r = await fetch(base + path);
+        expect(r.status).toBe(404);
+        expect(await r.text()).toContain("collector");
+      }
+    } finally {
+      server.stop();
+      store.close();
+    }
   });
 });
 

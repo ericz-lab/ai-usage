@@ -7,8 +7,12 @@ import { join, resolve } from "node:path";
  * SPACE_APP_DATA_DIR when it runs the service (docs/app-spec.md there).
  */
 
+/** dashboard: scan, publish, pull, serve the page. collector: scan and publish only; the page and the reads are off. */
+export type Role = "dashboard" | "collector";
+
 export type Config = {
   port: number;
+  role: Role;
   /** SQLite file holding the scanned turns; a cache that can be deleted and rebuilt. */
   dbPath: string;
   /** Directories scanned recursively for `*.jsonl` transcripts. */
@@ -47,10 +51,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     .map((s) => s.trim())
     .filter(Boolean)
     .map((s) => resolve(expandHome(s, home)));
+  const role = (env.USAGE_ROLE ?? "dashboard").trim().toLowerCase();
+  if (role !== "dashboard" && role !== "collector") throw new Error(`USAGE_ROLE must be dashboard or collector, got ${env.USAGE_ROLE}`);
   const interval = Number(env.USAGE_SCAN_INTERVAL ?? 300);
   if (!Number.isFinite(interval) || interval < 10) throw new Error(`USAGE_SCAN_INTERVAL must be at least 10 seconds, got ${env.USAGE_SCAN_INTERVAL}`);
   return {
     port,
+    role,
     dbPath: dbPathFrom(env),
     sources: sources.length ? sources : defaultSources(home),
     scanIntervalMs: interval * 1000,

@@ -25,6 +25,8 @@ Every machine runs the same ai-usage over its own transcripts. They share data t
 - **Inside ai-space** nothing is configured: `space.yaml` declares `storage.blobs: s3`, the space hands the prefix (`s3://<bucket>/ai-usage/`) and credentials over, and every space that shares the bucket shares the data. A space without S3 gets a file store and that instance stays local.
 - **A machine outside a space** (a laptop) sets `BLOB_URL`, `S3_*` and `USAGE_MACHINE` in its `.env` to join the same prefix; `deploy/install.sh` installs a launchd agent on macOS so it publishes whenever the machine is awake.
 
+A machine that only feeds the others sets `USAGE_ROLE=collector`: it scans and publishes, never pulls, and serves no page (the dashboard lives on the machine that has one; in ai-space every panel's tile points there through `SPACE_APP_URL_<NAME>`). The default role, `dashboard`, does everything.
+
 Sync runs every 30 minutes (`USAGE_SYNC_INTERVAL`) and on the Refresh button. Publishing rewrites only the files whose content changed (today's, and any day still receiving final tallies); pulling downloads only what changed. A machine that was off for a month catches up in one round.
 
 Without a bucket the older path still works: `USAGE_PEERS=box2=http://127.0.0.1:18880` names ai-usage instances reachable directly, or, inside a space that merges peers, the instance pulls each peer's ai-usage through the space's peer channel. Each instance's `GET /api/export` only ever hands out its own rows, so nothing is counted twice.
@@ -63,7 +65,7 @@ Environment (`.env.example` lists everything): `PORT`, `DATABASE_URL` or `SPACE_
 | Route | |
 | --- | --- |
 | `GET /api/summary?range=7d&models=a,b&machines=x,y&tz=Asia/Tokyo` | everything the page shows |
-| `GET /api/status` | machine, sources, counts, last scan, peers |
+| `GET /api/status` | machine, role, sources, counts, last scan, shared store, peers |
 | `POST /api/refresh` | scan now and sync the shared store (or pull the peers) |
 | `GET /api/export?since=<ms>` | this machine's own rows, for a peer pull |
 | `GET /api/widget` | the panel card |

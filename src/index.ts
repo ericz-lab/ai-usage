@@ -19,6 +19,7 @@ import { Store } from "./store.ts";
  *   bun src/index.ts stats [range] print totals, models, machines and projects for a range (7d by default; see RANGES)
  *
  * The machine's name on the dashboard (and in the shared store) is USAGE_MACHINE, else SPACE_NAME, else the hostname.
+ * USAGE_ROLE=collector makes this instance scan and publish only: no page, no pulls (config.ts).
  */
 
 const log = (line: string) => console.log(`[ai-usage] ${line}`);
@@ -33,7 +34,7 @@ async function main(): Promise<void> {
   const objects = objectStoreFromEnv(process.env);
   const syncInterval = Number(process.env.USAGE_SYNC_INTERVAL ?? 1800);
   if (!Number.isFinite(syncInterval) || syncInterval < 60) throw new Error(`USAGE_SYNC_INTERVAL must be at least 60 seconds, got ${process.env.USAGE_SYNC_INTERVAL}`);
-  const shared = objects ? { url: objects.url, shared: new Shared({ store, objects: objects.objects, machine, intervalMs: syncInterval * 1000, log }) } : undefined;
+  const shared = objects ? { url: objects.url, shared: new Shared({ store, objects: objects.objects, machine, intervalMs: syncInterval * 1000, publishOnly: config.role === "collector", log }) } : undefined;
   const command = process.argv[2] ?? "serve";
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const scan = () => scanSources(store, config.sources, { log });
@@ -83,7 +84,7 @@ async function main(): Promise<void> {
 
   const app = createApp({ store, config, machine, page: index, scan, peers, log, ...(shared ? { shared } : {}) });
   const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, routes: app.routes as never, development: !!process.env.SPACE_DEV });
-  log(`listening on http://127.0.0.1:${server.port} · ${machine} · cache ${config.dbPath} · sources ${config.sources.join(", ")}${shared ? ` · shared store ${shared.url} every ${syncInterval} s` : peers.enabled ? " · peers on" : ""}`);
+  log(`listening on http://127.0.0.1:${server.port} · ${machine} (${config.role}) · cache ${config.dbPath} · sources ${config.sources.join(", ")}${shared ? ` · shared store ${shared.url} every ${syncInterval} s` : peers.enabled ? " · peers on" : ""}`);
   const tick = () => app.refresh(false).catch((e) => log(`refresh failed: ${(e as Error).message}`));
   tick();
   const timer = setInterval(tick, config.scanIntervalMs);

@@ -91,6 +91,21 @@ describe("shared store", () => {
     store.close();
   });
 
+  test("a collector publishes and never pulls", async () => {
+    const objects = memoryObjectStore();
+    objects.objects.set("other/manifest.json", JSON.stringify({ machine: "other", updatedAt: 1, files: { "turns/2026-09-19.jsonl": { hash: "h", rows: 1 } } }));
+    objects.objects.set("other/turns/2026-09-19.jsonl", JSON.stringify({ machine: "", session_id: "z", ts: NOW, model: "m", input: 1, output: 1, cache_read: 0, cache_write: 0, tool: null, message_id: "z1", subagent: 0, agent_id: null }) + "\n");
+    const store = new Store(":memory:");
+    store.write({ sessions: [session("s1")], turns: [turn("c1", NOW - H)], dispatches: [] }, file);
+    const s = new Shared({ store, objects, machine: "collector", now: () => NOW, publishOnly: true });
+    const r = await s.sync(true);
+    expect(r.published).toHaveLength(3);
+    expect(r.pulled).toEqual([]);
+    expect(store.machines()).toEqual([{ machine: "", turns: 1 }]);
+    expect([...objects.objects.keys()].filter((k) => k.startsWith("collector/"))).toHaveLength(4);
+    store.close();
+  });
+
   test("objectStoreFromEnv parses BLOB_URL and ignores anything but s3", () => {
     expect(objectStoreFromEnv({})).toBeNull();
     expect(objectStoreFromEnv({ BLOB_URL: "file:///data/blobs" })).toBeNull();
