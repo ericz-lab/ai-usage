@@ -56,6 +56,10 @@ describe("shared store", () => {
     expect(b.machines().find((m) => m.machine === "alpha")?.turns).toBe(3);
     // Nothing changed since: a pull imports nothing and reports zero rows.
     expect((await sb.sync(true)).pulled[0]?.rows).toBe(0);
+    // The same store under a new machine name publishes everything again into its new directory.
+    const renamed = new Shared({ store: a, objects, machine: "alpha2", now: () => clock });
+    expect((await renamed.sync(true)).published).toHaveLength(4);
+    expect([...objects.objects.keys()].filter((k) => k.startsWith("alpha2/"))).toHaveLength(5);
     a.close();
     b.close();
   });

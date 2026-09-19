@@ -160,7 +160,9 @@ export class Shared {
     files.set("sessions.jsonl", { text: lines(x.sessions), rows: x.sessions.length });
     files.set("agents.jsonl", { text: lines(x.agents), rows: x.agents.length });
 
-    const previous = this.readManifest(this.store.getMeta(`${META}published`));
+    // What this machine published last, under this name; a renamed machine starts over in its new directory.
+    const recorded = this.readManifest(this.store.getMeta(`${META}published`));
+    const previous = recorded?.machine === this.machine ? recorded : null;
     const manifest: Manifest = { machine: this.machine, updatedAt: this.now(), files: {} };
     const written: string[] = [];
     for (const [path, f] of files) {
