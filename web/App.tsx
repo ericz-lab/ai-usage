@@ -253,6 +253,17 @@ export default function App() {
               <span title={status.sources.join("\n")}>
                 {status.machine} · {t("files", { n: status.files })} · {status.lastScan ? t("lastScan", { ago: relTime(status.lastScan, lang) }) : t("never")}
               </span>
+              {status.shared && (
+                <span className="dim" title={`${status.shared.url}\n${t("sharedHint")}`}>
+                  {t("shared", { ago: status.shared.lastSyncAt ? relTime(status.shared.lastSyncAt, lang) : t("never") })}
+                </span>
+              )}
+              {(status.shared?.machines ?? []).map((m) => (
+                <span key={m.name} className={`peer${m.ok ? "" : " down"}`} title={m.ok ? t("machineOk", { name: m.name, ago: m.updatedAt ? relTime(m.updatedAt, lang) : t("never") }) : t("peerDown", { name: m.name, error: m.error ?? "" })}>
+                  <i />
+                  {m.name}
+                </span>
+              ))}
               {status.peers.map((p) => (
                 <span key={p.name} className={`peer${p.ok ? "" : " down"}`} title={p.ok ? t("peerOk", { name: p.name, ago: p.lastPullAt ? relTime(p.lastPullAt, lang) : t("never") }) : t("peerDown", { name: p.name, error: p.error ?? "" })}>
                   <i />

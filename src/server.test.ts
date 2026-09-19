@@ -99,7 +99,7 @@ describe("routes", () => {
 
   test("refresh scans and the widget lists three lines", async () => {
     const r = await fetch(`${base}/api/refresh`, { method: "POST" });
-    expect(((await r.json()) as { files: number }).files).toBe(2);
+    expect(((await r.json()) as { scan: { files: number } }).scan.files).toBe(2);
     store.setMeta("last_scan", String(clock));
     const { body } = await get("/api/widget?tz=UTC");
     const items = body.items as { text: string; url: string }[];

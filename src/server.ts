@@ -2,6 +2,7 @@ import type { Config } from "./config.ts";
 import type { Peers } from "./peers.ts";
 import { PRICING_AS_OF } from "./pricing.ts";
 import type { ScanResult } from "./scanner.ts";
+import type { Shared } from "./shared.ts";
 import { RANGES, type Range, summary, validTz } from "./stats.ts";
 import type { Store } from "./store.ts";
 
@@ -12,10 +13,10 @@ import type { Store } from "./store.ts";
  *
  *   GET  /                       the dashboard
  *   GET  /healthz                200 once the store is open
- *   GET  /api/status             machine name, sources, files, turns, sessions, last scan, peers
+ *   GET  /api/status             machine name, sources, files, turns, sessions, last scan, shared store and peers
  *   GET  /api/summary            ?range=7d&models=a,b&machines=x,y&tz=Asia/Tokyo -> stats.ts Summary
  *                                (scans first when the last scan is stale; `machines` uses the names the page shows)
- *   POST /api/refresh            scan now and pull every peer; returns what changed
+ *   POST /api/refresh            scan now, sync the shared store (or pull every peer); returns what changed
  *   GET  /api/export?since=<ms>  this machine's own rows from `since` on, for a hub that pulls them
  *   GET  /api/widget             ai-space panel card: today, last 7 days, top model
  *
@@ -31,6 +32,9 @@ export type ServerOptions = {
   /** How this machine is named on the dashboard. */
   machine: string;
   scan: () => Promise<ScanResult>;
+  /** The shared store, when BLOB_URL is an s3 prefix; it wins over peers. */
+  shared?: { url: string; shared: Shared };
+  /** Direct or space-discovered peers; used when there is no shared store. */
   peers?: Peers;
   /** The page module (Bun HTML import); omitted in tests. */
   page?: unknown;
@@ -69,10 +73,11 @@ export function createApp(opts: ServerOptions) {
         });
     return inflight;
   };
-  /** Scan here and pull the peers; the peers' failures are recorded, not thrown. */
-  const refresh = async (): Promise<ScanResult> => {
+  /** Scan here, then sync the shared store (throttled unless forced) or pull the peers; their failures are recorded, not thrown. */
+  const refresh = async (force = true): Promise<ScanResult> => {
     const r = await scan();
-    if (opts.peers?.enabled) await opts.peers.pullAll();
+    if (opts.shared) await opts.shared.shared.sync(force);
+    else if (opts.peers?.enabled) await opts.peers.pullAll();
     return r;
   };
   const lastScanAt = (): number => Number(store.getMeta("last_scan") ?? 0);
@@ -94,8 +99,9 @@ export function createApp(opts: ServerOptions) {
     lastScan: lastScanAt() || null,
     scanning: inflight !== null,
     last,
-    peers: opts.peers?.states() ?? [],
-    peersEnabled: opts.peers?.enabled ?? false,
+    shared: opts.shared ? { url: opts.shared.url, lastSyncAt: opts.shared.shared.lastSyncAt(), machines: opts.shared.shared.machines() } : null,
+    peers: opts.shared ? [] : (opts.peers?.states() ?? []),
+    peersEnabled: !opts.shared && (opts.peers?.enabled ?? false),
   });
 
   const routes: Record<string, unknown> = {
@@ -121,7 +127,12 @@ export function createApp(opts: ServerOptions) {
         });
       },
     },
-    "/api/refresh": { POST: async () => json({ ok: true, ...(await refresh()), peers: opts.peers?.states() ?? [] }) },
+    "/api/refresh": {
+      POST: async () => {
+        const scanned = await refresh(true);
+        return json({ ...status(), scan: scanned });
+      },
+    },
     "/api/export": {
       GET: async (req: Request) => {
         const since = Number(new URL(req.url).searchParams.get("since") ?? 0);

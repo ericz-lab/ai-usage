@@ -20,12 +20,14 @@ The idea and the transcript format notes come from [phuryn/claude-usage](https:/
 
 ## Multi-machine
 
-Each machine runs its own ai-usage over its own transcripts and exports its rows at `GET /api/export?since=<ms>`. A hub pulls them and labels each row with the machine's name, so every view is computed once, over one store, with a machine filter. Two ways to reach a peer:
+Every machine runs the same ai-usage over its own transcripts. They share data through **one S3 prefix** (Cloudflare R2 or any S3-compatible bucket): each instance publishes its own rows under `<prefix>/<machine>/` (one file per day of turns, plus sessions and agents, and a manifest of content hashes) and reads every other machine's files whose hash changed. Machines never need to reach each other, only the bucket; a laptop behind NAT that is online an hour a day takes part like a server. Every view is computed once over one local cache with a machine filter, on whichever machine you open.
 
-- **Through ai-space.** When the service runs inside a space that merges peer machines, it finds the ai-usage of every peer in the space's app list and pulls through the space's own peer channel (`/api/peers/<peer>/apps/ai-usage/proxy/api/export`): token, tunnel and access layer are the space's, nothing to configure here.
-- **By URL.** `USAGE_PEERS=box2=http://127.0.0.1:18880,...` names ai-usage instances reachable directly (an SSH tunnel, a LAN), for a standalone setup.
+- **Inside ai-space** nothing is configured: `space.yaml` declares `storage.blobs: s3`, the space hands the prefix (`s3://<bucket>/ai-usage/`) and credentials over, and every space that shares the bucket shares the data. A space without S3 gets a file store and that instance stays local.
+- **A machine outside a space** (a laptop) sets `BLOB_URL`, `S3_*` and `USAGE_MACHINE` in its `.env` to join the same prefix; `deploy/install.sh` installs a launchd agent on macOS so it publishes whenever the machine is awake.
 
-Pulls happen after every scan (every five minutes by default) and on the Refresh button; they resume from the newest row already held for that machine, minus a two-day overlap, and rows are upserted, so a peer that was down catches up on its own.
+Sync runs every 30 minutes (`USAGE_SYNC_INTERVAL`) and on the Refresh button. Publishing rewrites only the files whose content changed (today's, and any day still receiving final tallies); pulling downloads only what changed. A machine that was off for a month catches up in one round.
+
+Without a bucket the older path still works: `USAGE_PEERS=box2=http://127.0.0.1:18880` names ai-usage instances reachable directly, or, inside a space that merges peers, the instance pulls each peer's ai-usage through the space's peer channel. Each instance's `GET /api/export` only ever hands out its own rows, so nothing is counted twice.
 
 ## Cost estimates
 
@@ -50,11 +52,11 @@ bun src/index.ts today           # today's usage by model, in the terminal
 bun src/index.ts stats 30d       # totals, models, machines and projects for a range
 ```
 
-Environment (`.env.example` lists everything): `PORT`, `DATABASE_URL` or `SPACE_APP_DATA_DIR` for the cache, `USAGE_SOURCES` for other transcript directories, `USAGE_SCAN_INTERVAL`, `USAGE_MACHINE` (else `SPACE_NAME`, else the hostname), `USAGE_PEERS`, `SPACE_API_URL` (set by ai-space).
+Environment (`.env.example` lists everything): `PORT`, `DATABASE_URL` or `SPACE_APP_DATA_DIR` for the cache, `USAGE_SOURCES` for other transcript directories, `USAGE_SCAN_INTERVAL`, `USAGE_SYNC_INTERVAL`, `USAGE_MACHINE` (else `SPACE_NAME`, else the hostname), `BLOB_URL` and `S3_*` for the shared store, `USAGE_PEERS`, `SPACE_API_URL` (set by ai-space).
 
 ## Inside ai-space
 
-`space.yaml` declares the service (port 8880, `/healthz`), the widget and a SQLite database. ai-space installs it as a default app on `init`: clone into `~/.ai-space/apps/ai-usage`, then `deploy/install.sh` (dependencies, a user-level systemd unit, start). On a machine with a hostname, set `SPACE_APP_URL_AI_USAGE=https://usage.<domain>/?lang={lang}` in the workspace `.env` so the panel tile opens the public address; the manifest itself names loopback, which is right on a laptop. Git-push deploys work like any other app with `deploy/post-receive`.
+`space.yaml` declares the service (port 8880, `/healthz`), the widget, a SQLite database and the shared store (`blobs: { backend: s3, fallback: file }`). ai-space installs it as a default app on `init`: clone into `~/.ai-space/apps/ai-usage`, then `deploy/install.sh` (dependencies, a user-level systemd unit, start). On a machine with a hostname, set `SPACE_APP_URL_AI_USAGE=https://usage.<domain>/?lang={lang}` in the workspace `.env` so the panel tile opens the public address; the manifest itself names loopback, which is right on a laptop. Git-push deploys work like any other app with `deploy/post-receive`.
 
 ## API
 
@@ -62,8 +64,8 @@ Environment (`.env.example` lists everything): `PORT`, `DATABASE_URL` or `SPACE_
 | --- | --- |
 | `GET /api/summary?range=7d&models=a,b&machines=x,y&tz=Asia/Tokyo` | everything the page shows |
 | `GET /api/status` | machine, sources, counts, last scan, peers |
-| `POST /api/refresh` | scan now and pull the peers |
-| `GET /api/export?since=<ms>` | this machine's own rows, for a hub |
+| `POST /api/refresh` | scan now and sync the shared store (or pull the peers) |
+| `GET /api/export?since=<ms>` | this machine's own rows, for a peer pull |
 | `GET /api/widget` | the panel card |
 | `GET /healthz` | 200 |
 

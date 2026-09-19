@@ -39,6 +39,7 @@ export type Status = {
   scanning: boolean;
   peers: { name: string; lastPullAt: number | null; ok: boolean; error: string | null; turns: number }[];
   peersEnabled: boolean;
+  shared: { url: string; lastSyncAt: number | null; machines: { name: string; updatedAt: number | null; pulledAt: number | null; ok: boolean; error: string | null; rows: number }[] } | null;
 };
 
 export async function getJson<T>(path: string): Promise<T> {

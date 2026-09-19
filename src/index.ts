@@ -5,18 +5,20 @@ import { Peers, parsePeerList } from "./peers.ts";
 import { shortModel } from "./pricing.ts";
 import { scanSources } from "./scanner.ts";
 import { createApp } from "./server.ts";
+import { Shared, objectStoreFromEnv } from "./shared.ts";
 import { type Range, RANGES, summary } from "./stats.ts";
 import { Store } from "./store.ts";
 
 /**
  * ai-usage entry point.
  *
- *   bun src/index.ts               serve the dashboard on 127.0.0.1:$PORT (scans on boot and every USAGE_SCAN_INTERVAL, pulls peers after each scan)
- *   bun src/index.ts scan          read new transcript lines into the cache, pull the peers, and exit
+ *   bun src/index.ts               serve the dashboard on 127.0.0.1:$PORT (scans on boot and every USAGE_SCAN_INTERVAL; syncs the shared
+ *                                  store every USAGE_SYNC_INTERVAL, or pulls peers after each scan when there is no store)
+ *   bun src/index.ts scan          read new transcript lines into the cache, sync the shared store or pull the peers, and exit
  *   bun src/index.ts today         print today's usage by model
  *   bun src/index.ts stats [range] print totals, models, machines and projects for a range (7d by default; see RANGES)
  *
- * The machine's name on the dashboard is USAGE_MACHINE, else SPACE_NAME, else the hostname.
+ * The machine's name on the dashboard (and in the shared store) is USAGE_MACHINE, else SPACE_NAME, else the hostname.
  */
 
 const log = (line: string) => console.log(`[ai-usage] ${line}`);
@@ -28,6 +30,10 @@ async function main(): Promise<void> {
   const machine = process.env.USAGE_MACHINE?.trim() || process.env.SPACE_NAME?.trim() || hostname();
   const store = new Store(config.dbPath);
   const peers = new Peers({ store, spaceApiUrl: process.env.SPACE_API_URL?.trim() || undefined, direct: parsePeerList(process.env.USAGE_PEERS), log });
+  const objects = objectStoreFromEnv(process.env);
+  const syncInterval = Number(process.env.USAGE_SYNC_INTERVAL ?? 1800);
+  if (!Number.isFinite(syncInterval) || syncInterval < 60) throw new Error(`USAGE_SYNC_INTERVAL must be at least 60 seconds, got ${process.env.USAGE_SYNC_INTERVAL}`);
+  const shared = objects ? { url: objects.url, shared: new Shared({ store, objects: objects.objects, machine, intervalMs: syncInterval * 1000, log }) } : undefined;
   const command = process.argv[2] ?? "serve";
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const scan = () => scanSources(store, config.sources, { log });
@@ -36,7 +42,11 @@ async function main(): Promise<void> {
     const r = await scan();
     log(`sources: ${r.sources.join(", ") || "(none found)"}`);
     log(`${r.files} files · ${r.newFiles} new · ${r.updatedFiles} updated · ${r.turns} turns read · ${r.ms} ms`);
-    if (peers.enabled) for (const p of await peers.pullAll()) log(`peer ${p.name}: ${p.ok ? `${p.turns} turns` : p.error}`);
+    if (shared) {
+      const r = await shared.shared.sync(true);
+      log(`shared store ${shared.url}: published ${r.published.length} file(s)`);
+      for (const m of r.pulled) log(`  ${m.name}: ${m.ok ? `${m.rows} new row(s)` : m.error}`);
+    } else if (peers.enabled) for (const p of await peers.pullAll()) log(`peer ${p.name}: ${p.ok ? `${p.turns} turns` : p.error}`);
     const c = store.counts();
     log(`cache: ${c.turns} turns in ${c.sessions} sessions from ${c.files} files (${config.dbPath})`);
     store.close();
@@ -71,10 +81,10 @@ async function main(): Promise<void> {
 
   if (command !== "serve") throw new Error(`unknown command: ${command} (expected serve, scan, today or stats)`);
 
-  const app = createApp({ store, config, machine, page: index, scan, peers, log });
+  const app = createApp({ store, config, machine, page: index, scan, peers, log, ...(shared ? { shared } : {}) });
   const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, routes: app.routes as never, development: !!process.env.SPACE_DEV });
-  log(`listening on http://127.0.0.1:${server.port} · ${machine} · cache ${config.dbPath} · sources ${config.sources.join(", ")}${peers.enabled ? " · peers on" : ""}`);
-  const tick = () => app.refresh().catch((e) => log(`refresh failed: ${(e as Error).message}`));
+  log(`listening on http://127.0.0.1:${server.port} · ${machine} · cache ${config.dbPath} · sources ${config.sources.join(", ")}${shared ? ` · shared store ${shared.url} every ${syncInterval} s` : peers.enabled ? " · peers on" : ""}`);
+  const tick = () => app.refresh(false).catch((e) => log(`refresh failed: ${(e as Error).message}`));
   tick();
   const timer = setInterval(tick, config.scanIntervalMs);
 

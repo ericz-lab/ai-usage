@@ -35,6 +35,10 @@ widgets:
     size: 1x1
     refresh: 5m
 
-# The cache database; a scan rebuilds it, so no backup section.
+# The cache database (a scan rebuilds it, so no backup section) and the shared
+# store: every machine's ai-usage writes its own rows under s3://<bucket>/ai-usage/
+# and reads the others', so one dashboard covers every machine that shares the
+# bucket. A space without S3 gets a file store and this instance stays local.
 storage:
   database: sqlite
+  blobs: { backend: s3, fallback: file }

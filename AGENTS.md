@@ -15,7 +15,8 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 
 - Bun + TypeScript, React 19 for the page, no other dependency. `src/index.ts` is the entry point (`Bun.serve` with the HTML import of `web/index.html`, `bun:sqlite`).
 - A scan runs on boot, every `USAGE_SCAN_INTERVAL` seconds, on `POST /api/refresh`, and before any read when the last scan is older than a minute. It is incremental: each file is tracked by size, mtime and the byte offset consumed, and only appended bytes are read (a partial last line waits until the file has been quiet for ten seconds). A full first scan of a year of transcripts takes well under a second per hundred megabytes.
-- Peers are pulled after every scan (`src/peers.ts`): discovery through `SPACE_API_URL` (`GET /api/apps?all=1`, entries named `ai-usage` with a `peer`) plus `USAGE_PEERS`; each pull asks `/api/export?since=` from the newest row held for that machine minus two days; results are upserted and the outcome kept in `meta` (`peer:<name>`).
+- The shared store (`src/shared.ts`) is on when `BLOB_URL` is an s3 prefix: after a scan, publish this machine's rows (`<machine>/turns/<utc day>.jsonl`, `sessions.jsonl`, `agents.jsonl`, `manifest.json` with content hashes) and pull every other machine's changed files, at most every `USAGE_SYNC_INTERVAL` seconds unless the Refresh button forces it. State lives in `meta` (`shared:published`, `shared:seen:<machine>`, `shared:machine:<machine>`, `shared:last`).
+- Without a shared store, peers are pulled after every scan (`src/peers.ts`): discovery through `SPACE_API_URL` (`GET /api/apps?all=1`, entries named `ai-usage` with a `peer`) plus `USAGE_PEERS`; each pull asks `/api/export?since=` from the newest row held for that machine minus two days; results are upserted and the outcome kept in `meta` (`peer:<name>`).
 - Runs as the user-level systemd unit `ai-usage` from `~/.ai-space/apps/ai-usage`, port 8880, health `GET /healthz`.
 
 ## Directory map
@@ -27,7 +28,8 @@ src/scanner.ts       * parseTranscript (pure) and the incremental scanSources
 src/store.ts         * bun:sqlite schema, upserts, the queries stats needs, export/import for peers
 src/stats.ts         * summary(): one window, one model and machine filter, one time zone -> everything the page shows
 src/server.ts        * routes: /api/summary, /api/status, /api/refresh, /api/export, /api/widget, /healthz, /icon.svg
-src/peers.ts           peer discovery and pulls
+src/shared.ts        * the shared store: object-store interface (S3 and in-memory), publish, pull
+src/peers.ts           peer discovery and pulls (the fallback without a shared store)
 src/pricing.ts         the price table, costOf, shortModel, modelRank
 src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*)
 web/App.tsx          * the page: filters in the URL, collapsed cards in localStorage, 60 s refresh
@@ -36,7 +38,8 @@ web/api.ts             the JSON types as the page sees them, formatting helpers
 web/i18n.ts            English and Chinese; every visible string goes through t()
 web/styles.css         tokens for both themes; series colours are the eight validated categorical slots
 deploy/app.service     user-level systemd unit template (@DIR@ substituted)
-deploy/install.sh      dependencies, unit, start, health check; what ai-space runs after cloning
+deploy/app.plist       macOS launchd agent template (@DIR@, @BUN@ substituted)
+deploy/install.sh      dependencies, unit or agent, start, health check; what ai-space runs after cloning
 deploy/post-receive    bare-repository hook for git-push deploys
 icon.svg               panel icon, 64x64 viewBox
 .env.example           every variable the service reads
@@ -46,6 +49,7 @@ icon.svg               panel icon, 64x64 viewBox
 
 - Tests sit next to the code (`src/*.test.ts`), use `:memory:` databases, temporary directories and a scripted `fetch`; no network, no real transcripts.
 - Widget contract: `GET /api/widget` -> `{ ok: true, items: [{ text, url, time }] }`.
+- Shared-store contract: a machine's directory is its name; `manifest.json` lists `files: { path: { hash, rows } }`; hashes are `Bun.hash` of the file text. A reader skips a file whose hash it already imported. Only this machine's own rows are published, never rows pulled from others.
 - Export contract: `GET /api/export?since=<ms>` -> `{ ok, machine, sessions, turns, agents }` with the store's row shapes; only rows scanned here (`machine = ''`), never rows pulled from elsewhere, so a chain of hubs cannot double count.
 - Series colours: a model's slot is its index in the all-time model list (`summary.models`), not in the filtered one, so filtering never repaints. Past eight slots everything folds into "other".
 - English in code, comments, docs and commits; the page is bilingual. Commit messages follow Conventional Commits.
@@ -68,7 +72,9 @@ bash deploy/install.sh            # install the user unit on a server
 | `DATABASE_URL` | `sqlite://<path>` of the cache (ai-space sets it) | `$SPACE_APP_DATA_DIR/usage.db`, else `data/usage.db` |
 | `USAGE_SOURCES` | comma-separated transcript directories | `~/.claude/projects` and the Xcode integration directory |
 | `USAGE_SCAN_INTERVAL` | seconds between scans | 300 |
-| `USAGE_MACHINE` | this machine's name on the dashboard | `SPACE_NAME`, else the hostname |
+| `USAGE_SYNC_INTERVAL` | seconds between shared-store syncs | 1800 |
+| `USAGE_MACHINE` | this machine's name on the dashboard and in the shared store | `SPACE_NAME`, else the hostname |
+| `BLOB_URL`, `S3_*` | the shared store (ai-space sets them from `storage.blobs`) | none = local only |
 | `USAGE_PEERS` | `name=url,...` of ai-usage instances reachable directly | none |
 | `SPACE_API_URL` | the space's API, for peer discovery (ai-space sets it) | none |
 
@@ -77,4 +83,5 @@ bash deploy/install.sh            # install the user unit on a server
 - A dispatch record (`toolUseResult` with `agentId` and `agentType`) is not always present; a subagent seen only through its `subagents/agent-<id>.jsonl` file gets type `subagent`, and its project comes from the session of its turns.
 - `startOfDay` works from the zone's wall clock; on a DST transition day the boundary may be an hour off. Nothing else depends on it.
 - The space's `GET /api/apps?all=1` lists peer apps only once the hub has a snapshot of the peer; right after a boot the first pull may find no peers and the next one (five minutes later) does.
+- Two machines with the same `USAGE_MACHINE` overwrite each other's directory in the shared store; names must be unique. Renaming a machine leaves its old directory behind (delete it by hand), and readers relabel the rows on the next pull because turns are keyed by message id.
 - `SPACE_APP_URL_AI_USAGE` is read by ai-space, not by this service: the tile's link changes, the service does not care.
