@@ -1,0 +1,21 @@
+# User-level systemd unit (no sudo). deploy/install.sh installs it as
+# ~/.config/systemd/user/ai-usage.service with @DIR@ replaced by the app directory.
+[Unit]
+Description=ai-usage (ai-space app)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=@DIR@
+ExecStart=%h/.bun/bin/bun src/index.ts
+Environment=NODE_ENV=production
+EnvironmentFile=-@DIR@/.env
+# Written by ai-space from space.yaml: DATABASE_URL, SPACE_APP_DATA_DIR, SPACE_API_URL, ...
+EnvironmentFile=-%h/.ai-space/data/ai-usage/space.env
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+
+[Install]
+WantedBy=default.target

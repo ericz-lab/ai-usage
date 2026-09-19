@@ -1,0 +1,11 @@
+#!/bin/bash
+# Bare-repository hook on a host: checkout -> deploy/install.sh -> ask ai-space
+# to re-read space.yaml. Install as ~/ai-usage.git/hooks/post-receive (chmod +x).
+set -e; unset GIT_DIR
+APP=ai-usage
+WORK=$HOME/.ai-space/apps/$APP
+mkdir -p "$WORK"
+git --git-dir=$HOME/$APP.git --work-tree=$WORK checkout -f main
+bash "$WORK/deploy/install.sh"
+TOKEN=$(grep "^SPACE_API_TOKEN=" "$HOME/.ai-space/.env" | cut -d= -f2-)
+curl -sS -m 20 -X POST "http://127.0.0.1:${SPACE_PORT:-8700}/api/apps/$APP/sync" -H "authorization: Bearer $TOKEN" -o /dev/null -w "  -> ai-space sync HTTP %{http_code}\n" || echo "  -> ai-space sync skipped"

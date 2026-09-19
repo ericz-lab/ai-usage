@@ -1,0 +1,40 @@
+# ai-space app manifest. Contract: ai-space docs/app-spec.md (spec 1).
+# ai-usage ships with ai-space as a default app; the space installs it on `init`.
+
+spec: 1
+name: ai-usage
+title: AI Usage
+description: What Claude Code spent on this machine and its peers, read from the CLI's own transcripts. Tokens, cost estimates, models, projects, sessions and subagents.
+icon: icon.svg
+# The page. On a laptop the loopback address works as is; on a server set
+# SPACE_APP_URL_AI_USAGE=https://usage.example.com in the workspace .env to
+# point the tile at the public hostname instead.
+url: http://127.0.0.1:8880/?lang={lang}
+status: active
+repo: https://github.com/ericz-lab/ai-usage.git
+i18n:
+  zh:
+    title: AI 用量
+    description: 本机和 peer 机器上 Claude Code 的消耗，直接从 CLI 的转录记录统计：Token、估算费用、模型、项目、会话和子智能体。
+    widgets:
+      usage: { title: AI 用量 }
+
+# The service. ai-space hands over PORT; the process binds 127.0.0.1 only.
+service:
+  command: bun src/index.ts
+  port: 8880
+  health: /healthz
+
+# Panel card: today, the last seven days, the top model.
+widgets:
+  - name: usage
+    title: AI Usage
+    kind: items
+    source: /api/widget
+    link: /
+    size: 1x1
+    refresh: 5m
+
+# The cache database; a scan rebuilds it, so no backup section.
+storage:
+  database: sqlite
