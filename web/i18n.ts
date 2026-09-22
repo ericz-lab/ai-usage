@@ -93,6 +93,17 @@ const EN = {
   table: "table",
   chart: "chart",
   other: "other",
+  limits: "Plan usage limits",
+  limitsFrom: "{machine} · {ago}",
+  limitsHint: "Read with the Claude Code login on {machine} from the same endpoint as the CLI's /usage; every machine with a login publishes its reading, and the newest one per account is shown.",
+  limitsNone: "No reading yet: a machine needs a Claude subscription login (claude, then /login) and a recent CLI run so its token is fresh.",
+  "limit.session": "Current session",
+  "limit.weekly": "Weekly limits",
+  "limit.weekly_all": "All models",
+  used: "{pct}% used",
+  resetsIn: "Resets in {in}",
+  resetsAt: "Resets {at}",
+  resetDone: "Reset since the last reading",
 };
 
 const ZH: Record<keyof typeof EN, string> = {
@@ -182,6 +193,17 @@ const ZH: Record<keyof typeof EN, string> = {
   table: "表格",
   chart: "图表",
   other: "其他",
+  limits: "套餐用量限额",
+  limitsFrom: "{machine} · {ago}",
+  limitsHint: "用 {machine} 上 Claude Code 的登录，从 CLI 的 /usage 同一个接口读取；每台有登录的机器都会发布自己的读数，每个账号显示最新的一份。",
+  limitsNone: "还没有读数：需要一台机器登录了 Claude 订阅（claude 里 /login），并且最近跑过 CLI，令牌才是新的。",
+  "limit.session": "当前会话",
+  "limit.weekly": "每周限额",
+  "limit.weekly_all": "所有模型",
+  used: "已用 {pct}%",
+  resetsIn: "{in}后重置",
+  resetsAt: "{at} 重置",
+  resetDone: "上次读取后已重置",
 };
 
 export type Key = keyof typeof EN;

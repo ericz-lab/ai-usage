@@ -1,4 +1,5 @@
 import type { Config } from "./config.ts";
+import type { Limit, Limits } from "./limits.ts";
 import type { Peers } from "./peers.ts";
 import { PRICING_AS_OF } from "./pricing.ts";
 import type { ScanResult } from "./scanner.ts";
@@ -16,16 +17,17 @@ import type { Store } from "./store.ts";
  *   GET  /api/status             machine name, sources, files, turns, sessions, last scan, shared store and peers
  *   GET  /api/summary            ?range=7d&models=a,b&machines=x,y&tz=Asia/Tokyo -> stats.ts Summary
  *                                (scans first when the last scan is stale; `machines` uses the names the page shows)
- *   POST /api/refresh            scan now, sync the shared store (or pull every peer); returns what changed
+ *   POST /api/refresh            scan now, sync the shared store (or pull every peer), re-read the plan limits; returns what changed
  *   GET  /api/export?since=<ms>  this machine's own rows from `since` on, for a hub that pulls them
- *   GET  /api/widget             ai-space panel card: today, last 7 days, top model
+ *   GET  /api/limits             plan usage limits (session, weekly): the newest snapshot per account, this machine's and the shared store's
+ *   GET  /api/widget             ai-space panel card: today, last 7 days, top model, plan limits
  *
  * Reads trust loopback; there is no token (the edge holds the login, and a
  * peer's export is reached through the space's authenticated peer channel).
  *
  * A collector (USAGE_ROLE=collector) serves only /healthz, /api/status,
- * /api/refresh and /api/export: it scans and publishes, and the page, the
- * summary and the widget answer 404 with a line saying where the dashboard is.
+ * /api/refresh and /api/export: it scans and publishes (turns and plan limits),
+ * and the page, the summary, the limits and the widget answer 404 with a line saying where the dashboard is.
  */
 
 export const VERSION = "0.1.0";
@@ -40,6 +42,8 @@ export type ServerOptions = {
   shared?: { url: string; shared: Shared };
   /** Direct or space-discovered peers; used when there is no shared store. */
   peers?: Peers;
+  /** Plan usage limits (limits.ts); omitted = the card stays empty. */
+  limits?: Limits;
   /** The page module (Bun HTML import); omitted in tests. */
   page?: unknown;
   /** Reads run a scan first when the last one is older than this. */
@@ -52,6 +56,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 const fmtTokens = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 1 : 2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}K` : String(n));
 const fmtCost = (c: number | null) => (c === null ? "n/a" : c >= 100 ? `$${c.toFixed(0)}` : c >= 1 ? `$${c.toFixed(2)}` : `$${c.toFixed(3)}`);
+const limitName = (l: Limit) => (l.kind === "session" ? "session" : l.label ? `week ${l.label}` : "week");
 const list = (v: string | null) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 export function createApp(opts: ServerOptions) {
@@ -80,6 +85,7 @@ export function createApp(opts: ServerOptions) {
   /** Scan here, then sync the shared store (throttled unless forced) or pull the peers; their failures are recorded, not thrown. */
   const refresh = async (force = true): Promise<ScanResult> => {
     const r = await scan();
+    if (force) await opts.limits?.tick(true);
     if (opts.shared) await opts.shared.shared.sync(force);
     else if (opts.peers?.enabled) await opts.peers.pullAll();
     return r;
@@ -107,6 +113,7 @@ export function createApp(opts: ServerOptions) {
     shared: opts.shared ? { url: opts.shared.url, lastSyncAt: opts.shared.shared.lastSyncAt(), machines: opts.shared.shared.machines() } : null,
     peers: opts.shared ? [] : (opts.peers?.states() ?? []),
     peersEnabled: !opts.shared && (opts.peers?.enabled ?? false),
+    limits: opts.limits?.state() ?? null,
   });
 
   const routes: Record<string, unknown> = {
@@ -146,6 +153,7 @@ export function createApp(opts: ServerOptions) {
         return json({ ok: true, machine, ...store.exportSince(since) });
       },
     },
+    "/api/limits": { GET: async () => json({ ok: true, snapshots: (await opts.limits?.snapshots()) ?? [], local: opts.limits?.state() ?? null }) },
     "/api/widget": {
       GET: async (req: Request) => {
         try {
@@ -154,6 +162,7 @@ export function createApp(opts: ServerOptions) {
           const today = summary(store, { range: "today", tz, now: now(), sessionLimit: 1 });
           const week = summary(store, { range: "7d", tz, now: now(), sessionLimit: 1 });
           const top = week.byModel[0];
+          const plan = (await opts.limits?.snapshots())?.[0];
           const at = new Date(now()).toISOString();
           const machines = week.byMachine.length > 1 ? ` · ${week.byMachine.length} machines` : "";
           return json({
@@ -162,6 +171,7 @@ export function createApp(opts: ServerOptions) {
               { text: `Today · ${fmtTokens(today.totals.tokens)} tokens · ${fmtCost(today.totals.cost)} · ${today.totals.sessions} sessions`, url: "/?range=today", time: at },
               { text: `7 days · ${fmtTokens(week.totals.tokens)} tokens · ${fmtCost(week.totals.cost)} · ${fmtCost(week.totals.perDay.cost)} per day${machines}`, url: "/?range=7d", time: at },
               ...(top ? [{ text: `Top model · ${top.model} · ${fmtTokens(top.tokens)} tokens in 7 days`, url: "/?range=7d" }] : []),
+              ...(plan ? [{ text: `Plan · ${plan.limits.map((l) => `${limitName(l)} ${Math.round(l.resetsAt !== null && l.resetsAt <= now() ? 0 : l.percent)}%`).join(" · ")}`, url: "/", time: new Date(plan.fetchedAt).toISOString() }] : []),
             ],
           });
         } catch (e) {
@@ -174,9 +184,11 @@ export function createApp(opts: ServerOptions) {
     const off = () => new Response(`ai-usage on ${machine} is a collector: it scans and publishes; open the dashboard on the machine that has one.\n`, { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
     delete routes["/api/summary"];
     delete routes["/api/widget"];
+    delete routes["/api/limits"];
     routes["/"] = off;
     routes["/api/summary"] = off;
     routes["/api/widget"] = off;
+    routes["/api/limits"] = off;
     return { routes, scan, refresh, status };
   }
   if (opts.page) routes["/"] = opts.page;

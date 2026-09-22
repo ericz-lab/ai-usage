@@ -16,6 +16,7 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 - Bun + TypeScript, React 19 for the page, no other dependency. `src/index.ts` is the entry point (`Bun.serve` with the HTML import of `web/index.html`, `bun:sqlite`).
 - A scan runs on boot, every `USAGE_SCAN_INTERVAL` seconds, on `POST /api/refresh`, and before any read when the last scan is older than a minute. It is incremental: each file is tracked by size, mtime and the byte offset consumed, and only appended bytes are read (a partial last line waits until the file has been quiet for ten seconds). A full first scan of a year of transcripts takes well under a second per hundred megabytes.
 - The shared store (`src/shared.ts`) is on when `BLOB_URL` is an s3 prefix: after a scan, publish this machine's rows (`<machine>/turns/<utc day>.jsonl`, `sessions.jsonl`, `agents.jsonl`, `manifest.json` with content hashes) and pull every other machine's changed files, at most every `USAGE_SYNC_INTERVAL` seconds unless the Refresh button forces it. State lives in `meta` (`shared:published`, `shared:seen:<machine>`, `shared:machine:<machine>`, `shared:last`).
+- Plan limits (`src/limits.ts`): every five minutes, with the CLI's OAuth login (`~/.claude/.credentials.json`, or the macOS keychain item `Claude Code-credentials`), `GET https://api.anthropic.com/api/oauth/usage`; the token is read, never refreshed (a refresh would rotate the CLI's refresh token). The snapshot is kept in memory and, with a shared store, put at `<machine>/limits.json` outside the manifest; the dashboard reads each known machine's file (cached 60 s) and keeps the newest per account (`accountUuid` from `~/.claude.json`).
 - `USAGE_ROLE=collector` (`config.ts`): the shared store is publish-only and `server.ts` registers no page, summary or widget route (they answer 404 with a line). Status, refresh, export and healthz stay.
 - Without a shared store, peers are pulled after every scan (`src/peers.ts`): discovery through `SPACE_API_URL` (`GET /api/apps?all=1`, entries named `ai-usage` with a `peer`) plus `USAGE_PEERS`; each pull asks `/api/export?since=` from the newest row held for that machine minus two days; results are upserted and the outcome kept in `meta` (`peer:<name>`).
 - Runs as the user-level systemd unit `ai-usage` from `~/.ai-space/apps/ai-usage`, port 8880, health `GET /healthz`.
@@ -28,8 +29,9 @@ src/index.ts         * entry point: serve, scan, today, stats
 src/scanner.ts       * parseTranscript (pure) and the incremental scanSources
 src/store.ts         * bun:sqlite schema, upserts, the queries stats needs, export/import for peers
 src/stats.ts         * summary(): one window, one model and machine filter, one time zone -> everything the page shows
-src/server.ts        * routes: /api/summary, /api/status, /api/refresh, /api/export, /api/widget, /healthz, /icon.svg
+src/server.ts        * routes: /api/summary, /api/status, /api/refresh, /api/export, /api/limits, /api/widget, /healthz, /icon.svg
 src/shared.ts        * the shared store: object-store interface (S3 and in-memory), publish, pull
+src/limits.ts          plan usage limits: read the CLI's login, fetch /api/oauth/usage, publish and merge snapshots
 src/peers.ts           peer discovery and pulls (the fallback without a shared store)
 src/pricing.ts         the price table, costOf, shortModel, modelRank
 src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*)
@@ -86,4 +88,5 @@ bash deploy/install.sh            # install the user unit on a server
 - `startOfDay` works from the zone's wall clock; on a DST transition day the boundary may be an hour off. Nothing else depends on it.
 - The space's `GET /api/apps?all=1` lists peer apps only once the hub has a snapshot of the peer; right after a boot the first pull may find no peers and the next one (five minutes later) does.
 - Two machines with the same `USAGE_MACHINE` overwrite each other's directory in the shared store; names must be unique. Renaming a machine leaves its old directory behind (delete it by hand), and readers relabel the rows on the next pull because turns are keyed by message id.
+- The usage endpoint is undocumented and rate limited (429 when polled hard); keep the five-minute interval. Its `limits` array is what the page shows; older answers without it fall back to `five_hour` / `seven_day` / `seven_day_<model>`.
 - `SPACE_APP_URL_AI_USAGE` is read by ai-space, not by this service: the tile's link changes, the service does not care.

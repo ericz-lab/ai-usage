@@ -39,7 +39,19 @@ export type Status = {
   scanning: boolean;
   peers: { name: string; lastPullAt: number | null; ok: boolean; error: string | null; turns: number }[];
   peersEnabled: boolean;
+  limits: { ok: boolean; error: string | null; fetchedAt: number | null } | null;
   shared: { url: string; lastSyncAt: number | null; machines: { name: string; updatedAt: number | null; pulledAt: number | null; ok: boolean; error: string | null; rows: number }[] } | null;
+};
+
+export type Limit = { kind: string; group: string; label: string | null; percent: number; resetsAt: number | null; severity: string };
+export type LimitsSnapshot = { machine: string; account: string | null; plan: string | null; tier: string | null; fetchedAt: number; limits: Limit[] };
+export type LimitsReply = { ok: boolean; snapshots: LimitsSnapshot[] };
+
+/** `max` + `default_claude_max_20x` -> `Max (20x)`. */
+export const planName = (plan: string | null, tier: string | null): string => {
+  const name = plan ? plan[0]!.toUpperCase() + plan.slice(1) : "";
+  const x = tier?.match(/_(\d+x)$/)?.[1];
+  return x ? `${name} (${x})` : name;
 };
 
 export async function getJson<T>(path: string): Promise<T> {

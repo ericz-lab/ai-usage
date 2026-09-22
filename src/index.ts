@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import index from "../web/index.html";
 import { loadConfig } from "./config.ts";
+import { Limits } from "./limits.ts";
 import { Peers, parsePeerList } from "./peers.ts";
 import { shortModel } from "./pricing.ts";
 import { scanSources } from "./scanner.ts";
@@ -20,6 +21,7 @@ import { Store } from "./store.ts";
  *
  * The machine's name on the dashboard (and in the shared store) is USAGE_MACHINE, else SPACE_NAME, else the hostname.
  * USAGE_ROLE=collector makes this instance scan and publish only: no page, no pulls (config.ts).
+ * Plan usage limits are read with the CLI's own login when this machine has one (limits.ts), every five minutes.
  */
 
 const log = (line: string) => console.log(`[ai-usage] ${line}`);
@@ -82,15 +84,20 @@ async function main(): Promise<void> {
 
   if (command !== "serve") throw new Error(`unknown command: ${command} (expected serve, scan, today or stats)`);
 
-  const app = createApp({ store, config, machine, page: index, scan, peers, log, ...(shared ? { shared } : {}) });
+  const limits = new Limits({ machine, log, publishOnly: config.role === "collector", ...(objects ? { objects: objects.objects, others: () => shared!.shared.machines().map((m) => m.name) } : {}) });
+  const app = createApp({ store, config, machine, page: index, scan, peers, limits, log, ...(shared ? { shared } : {}) });
   const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, routes: app.routes as never, development: !!process.env.SPACE_DEV });
   log(`listening on http://127.0.0.1:${server.port} · ${machine} (${config.role}) · cache ${config.dbPath} · sources ${config.sources.join(", ")}${shared ? ` · shared store ${shared.url} every ${syncInterval} s` : peers.enabled ? " · peers on" : ""}`);
   const tick = () => app.refresh(false).catch((e) => log(`refresh failed: ${(e as Error).message}`));
   tick();
   const timer = setInterval(tick, config.scanIntervalMs);
+  // The limits keep their own clock (five minutes between fetches); this only asks whether one is due.
+  limits.tick();
+  const limitsTimer = setInterval(() => limits.tick(), 60_000);
 
   const stop = () => {
     clearInterval(timer);
+    clearInterval(limitsTimer);
     server.stop();
     store.close();
     process.exit(0);

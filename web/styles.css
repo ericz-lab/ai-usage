@@ -14,6 +14,7 @@
   --accent: #2a78d6;
   --good: #0ca30c;
   --bad: #d03b3b;
+  --warn: #c98500;
   --grid: #ecebe7;
   --s1: #2a78d6;
   --s2: #eb6834;
@@ -130,6 +131,17 @@ b { font-weight: 600; }
 .note { color: var(--muted); font-size: 13px; padding: 8px 0; }
 .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
 
+/* plan limits: label and reset on the left, bar, percent on the right (the CLI's /usage layout) */
+.limits-group { font-size: 13px; font-weight: 600; margin: 12px 0 2px; }
+.limit { display: grid; grid-template-columns: minmax(140px, 220px) 1fr 84px; gap: 16px; align-items: center; padding: 7px 0; }
+.limit-name b { display: block; font-weight: 500; }
+.limit-name span { display: block; font-size: 12px; color: var(--muted); }
+.limit-track { height: 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+.limit-track i { display: block; height: 100%; border-radius: 999px; background: var(--accent); min-width: 6px; }
+.limit-track.warn i { background: var(--warn); }
+.limit-track.bad i { background: var(--bad); }
+.limit-pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; white-space: nowrap; }
+
 /* charts */
 .chart-box { width: 100%; }
 .chart text.axis { font-size: 10px; fill: var(--muted); font-family: var(--font); }
@@ -190,4 +202,6 @@ td.ell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .hbars { grid-template-columns: minmax(60px, 120px) 1fr auto; }
   .head .meta { margin-left: 0; }
+  .limit { grid-template-columns: 1fr 70px; gap: 4px 12px; }
+  .limit-track { grid-column: 1 / -1; grid-row: 2; }
 }

@@ -12,10 +12,11 @@ The idea and the transcript format notes come from [phuryn/claude-usage](https:/
 
 - **Range**: 5 hours (a subscription's rolling window), today, 7, 30, 90 days, all time; in the viewer's time zone.
 - **Filters**: models (colours follow the model, not its rank, so a filter never repaints the survivors) and machines.
+- **Plan usage limits**: the bars of the CLI's `/usage` (current session, weekly all models, weekly per model) with their reset times, read from the endpoint the CLI itself calls with this machine's Claude subscription login. The token is only read, never refreshed, so a machine whose CLI has not run lately reports an expired token; with the shared store every machine publishes its reading (`<machine>/limits.json`) and the dashboard shows the newest one per account. Refreshed every five minutes.
 - **Tiles**: tokens (with the subagents' share), estimated cost, sessions, turns, per-day average.
 - **Charts**: daily usage stacked by model, hourly distribution (average per active day), by model, by machine, top projects, subagents by type. Every mark has a tooltip.
 - **Tables**: cost by model with the four token kinds, sessions (project, topic, model, last active, duration, turns, tokens, cost), subagent dispatches, cost by project, cost by project and branch. Sortable, collapsible, the long ones fold.
-- **Widget**: an ai-space panel card with today, the last seven days and the top model.
+- **Widget**: an ai-space panel card with today, the last seven days, the top model and the plan limits.
 - English and Chinese (`?lang=`), light and dark (`?theme=`, else the OS setting).
 
 ## Multi-machine
@@ -66,7 +67,8 @@ Environment (`.env.example` lists everything): `PORT`, `DATABASE_URL` or `SPACE_
 | --- | --- |
 | `GET /api/summary?range=7d&models=a,b&machines=x,y&tz=Asia/Tokyo` | everything the page shows |
 | `GET /api/status` | machine, role, sources, counts, last scan, shared store, peers |
-| `POST /api/refresh` | scan now and sync the shared store (or pull the peers) |
+| `POST /api/refresh` | scan now, sync the shared store (or pull the peers), re-read the plan limits |
+| `GET /api/limits` | plan usage limits: the newest reading per account |
 | `GET /api/export?since=<ms>` | this machine's own rows, for a peer pull |
 | `GET /api/widget` | the panel card |
 | `GET /healthz` | 200 |

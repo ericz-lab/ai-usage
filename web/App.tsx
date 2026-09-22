@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { type Status, type Summary, type Totals, dateTime, fmtCost, fmtInt, fmtMinutes, fmtTokens, getJson, postJson, relTime, shortDay } from "./api.ts";
+import { type LimitsReply, type LimitsSnapshot, type Status, type Summary, type Totals, dateTime, fmtCost, fmtInt, fmtMinutes, fmtTokens, getJson, planName, postJson, relTime, shortDay } from "./api.ts";
 import { HBars, HourBars, Legend, SLOTS, type StackDay, StackedBars, Tooltip, type Tip, seriesVar } from "./charts.tsx";
-import { type Key, type Lang, detectLang, translate } from "./i18n.ts";
+import { type Key, LOCALE, type Lang, detectLang, translate } from "./i18n.ts";
 
 /**
  * The dashboard. State that a link should carry (range, models, machines)
@@ -146,12 +146,72 @@ const TokenCells = ({ r, lang }: { r: Totals; lang: Lang }) => (
   </>
 );
 
+/** The /usage bars: one row per limit, grouped session / weekly, the newest reading per account. */
+function LimitsCard({ snaps, lang, t, collapsed, onToggle }: { snaps: LimitsSnapshot[]; lang: Lang; t: (k: Key, v?: Record<string, string | number>) => string; collapsed: Set<string>; onToggle: (k: string) => void }) {
+  const now = Date.now();
+  const resets = (at: number | null): string => {
+    if (at === null) return "";
+    if (at <= now) return t("resetDone");
+    const min = Math.round((at - now) / 60_000);
+    if (min < 24 * 60) return t("resetsIn", { in: fmtMinutes(min, lang) });
+    return t("resetsAt", { at: new Date(at).toLocaleString(LOCALE[lang], { weekday: "short", hour: "numeric", minute: "2-digit" }) });
+  };
+  const first = snaps[0];
+  return (
+    <Card
+      id="limits"
+      title={t("limits")}
+      hint={first ? planName(first.plan, first.tier) : undefined}
+      right={first ? <span className="hint" title={t("limitsHint", { machine: first.machine })}>{t("limitsFrom", { machine: first.machine, ago: relTime(first.fetchedAt, lang) })}</span> : undefined}
+      collapsed={collapsed}
+      onToggle={onToggle}
+    >
+      {!first && <p className="note">{t("limitsNone")}</p>}
+      {snaps.map((s, i) => (
+        <div key={s.account ?? s.machine} className="limits">
+          {i > 0 && (
+            <div className="limits-group">
+              {planName(s.plan, s.tier)} · {t("limitsFrom", { machine: s.machine, ago: relTime(s.fetchedAt, lang) })}
+            </div>
+          )}
+          {["session", "weekly"].map((g) => {
+            const rows = s.limits.filter((l) => (g === "session" ? l.group === "session" : l.group !== "session"));
+            if (!rows.length) return null;
+            return (
+              <div key={g}>
+                {g === "weekly" && <div className="limits-group">{t("limit.weekly")}</div>}
+                {rows.map((l) => {
+                  const pct = Math.round(l.resetsAt !== null && l.resetsAt <= now ? 0 : Math.min(100, Math.max(0, l.percent)));
+                  const level = l.severity === "critical" || pct >= 95 ? " bad" : l.severity === "warning" || pct >= 80 ? " warn" : "";
+                  return (
+                    <div key={`${l.kind}/${l.label ?? ""}`} className="limit">
+                      <div className="limit-name">
+                        <b>{l.label ?? (l.kind === "session" ? t("limit.session") : t("limit.weekly_all"))}</b>
+                        <span title={l.resetsAt ? dateTime(l.resetsAt, lang) : ""}>{resets(l.resetsAt)}</span>
+                      </div>
+                      <div className={`limit-track${level}`}>
+                        <i style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="limit-pct">{t("used", { pct })}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 export default function App() {
   const [lang] = useState<Lang>(() => detectLang());
   const t = useCallback((k: Key, v?: Record<string, string | number>) => translate(lang, k, v), [lang]);
   const [{ range, models, machines }, setParams] = useState(readParams);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
+  const [limits, setLimits] = useState<LimitsSnapshot[] | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [tip, setTip] = useState<Tip>(null);
@@ -162,10 +222,11 @@ export default function App() {
     const q = new URLSearchParams({ range, tz });
     if (models.length) q.set("models", models.join(","));
     if (machines.length) q.set("machines", machines.join(","));
-    return Promise.all([getJson<Summary>(`/api/summary?${q}`), getJson<Status>("/api/status")])
-      .then(([s, st]) => {
+    return Promise.all([getJson<Summary>(`/api/summary?${q}`), getJson<Status>("/api/status"), getJson<LimitsReply>("/api/limits").catch(() => null)])
+      .then(([s, st, lim]) => {
         setSummary(s);
         setStatus(st);
+        if (lim) setLimits(lim.snapshots);
         setErr("");
       })
       .catch((e) => setErr(String((e as Error).message || e)));
@@ -322,6 +383,8 @@ export default function App() {
       {err && <p className="note">{t("unavailable", { error: err })}</p>}
       {!summary && !err && <p className="note">{t("loading")}</p>}
       {summary && status && status.turns === 0 && <p className="empty">{t("noData", { sources: status.sources.join(", ") })}</p>}
+
+      {limits && <LimitsCard snaps={limits} lang={lang} t={t} collapsed={collapsed} onToggle={toggleCard} />}
 
       {summary && tot && (
         <>
