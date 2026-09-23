@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS turns (
   tool        TEXT,
   message_id  TEXT NOT NULL DEFAULT '',
   subagent    INTEGER NOT NULL DEFAULT 0,
-  agent_id    TEXT
+  agent_id    TEXT,
+  service_tier TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS turns_message ON turns(message_id) WHERE message_id != '';
 CREATE INDEX IF NOT EXISTS turns_ts ON turns(ts);
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 export type FileState = { path: string; source: string; size: number; mtime: number; offset: number };
 
 export type TurnRow = {
+  service_tier?: string | null;
   machine: string;
   session_id: string;
   ts: number;
@@ -116,7 +118,7 @@ export type AgentRow = {
 /** What one machine hands another: its own rows changed since a time. */
 export type Export = { sessions: SessionRow[]; turns: TurnRow[]; agents: AgentRow[] };
 
-const TURN_COLS = "machine, session_id, ts, model, input, output, cache_read, cache_write, tool, message_id, subagent, agent_id";
+const TURN_COLS = "machine, session_id, ts, model, input, output, cache_read, cache_write, tool, message_id, subagent, agent_id, service_tier";
 
 export class Store {
   readonly db: Database;
@@ -126,6 +128,8 @@ export class Store {
     this.db = new Database(path, { create: true });
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec(SCHEMA);
+    const columns = this.db.query<{ name: string }, []>("PRAGMA table_info(turns)").all();
+    if (!columns.some((c) => c.name === "service_tier")) this.db.exec("ALTER TABLE turns ADD COLUMN service_tier TEXT");
   }
 
   close(): void {
@@ -137,8 +141,9 @@ export class Store {
   }
 
   /** One local transcript's new content and its new file state, in one transaction. */
-  write(parsed: Parsed, file: FileState): void {
+  write(parsed: Parsed, file: FileState, parserState?: { key: string; value: string }): void {
     this.db.transaction(() => {
+      if (parserState) this.setMeta(parserState.key, parserState.value);
       for (const s of parsed.sessions) this.upsertSession("", s);
       for (const t of parsed.turns) this.upsertTurn("", t);
       for (const d of parsed.dispatches) this.upsertDispatch("", d);
@@ -157,6 +162,7 @@ export class Store {
           sessionId: t.session_id,
           ts: t.ts,
           model: t.model,
+          serviceTier: t.service_tier ?? null,
           input: t.input,
           output: t.output,
           cacheRead: t.cache_read,
@@ -192,13 +198,13 @@ export class Store {
   private upsertTurn(machine: string, t: Turn): void {
     this.db
       .query(
-        `INSERT INTO turns (${TURN_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO turns (${TURN_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(message_id) WHERE message_id != '' DO UPDATE SET
-           machine = excluded.machine, ts = excluded.ts, model = excluded.model, input = excluded.input, output = excluded.output,
+           machine = excluded.machine, ts = excluded.ts, model = excluded.model, service_tier = excluded.service_tier, input = excluded.input, output = excluded.output,
            cache_read = excluded.cache_read, cache_write = excluded.cache_write,
            tool = COALESCE(excluded.tool, turns.tool), subagent = excluded.subagent, agent_id = COALESCE(excluded.agent_id, turns.agent_id)`,
       )
-      .run(machine, t.sessionId, t.ts, t.model, t.input, t.output, t.cacheRead, t.cacheWrite, t.tool, t.messageId, t.subagent ? 1 : 0, t.agentId);
+      .run(machine, t.sessionId, t.ts, t.model, t.input, t.output, t.cacheRead, t.cacheWrite, t.tool, t.messageId, t.subagent ? 1 : 0, t.agentId, t.serviceTier ?? null);
   }
 
   private upsertDispatch(machine: string, d: Dispatch): void {

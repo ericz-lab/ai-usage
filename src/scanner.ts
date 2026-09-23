@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
+import { parseCodexTranscript, type CodexState } from "./codex-scanner.ts";
 import type { Store } from "./store.ts";
 
 /**
@@ -22,6 +23,7 @@ export type Turn = Usage & {
   sessionId: string;
   ts: number;
   model: string;
+  serviceTier?: string | null;
   tool: string | null;
   /** Empty when the record had none; such turns are kept as they are. */
   messageId: string;
@@ -246,15 +248,23 @@ async function scanFile(store: Store, path: string, source: string, now: number)
   const size = st.size;
   const mtime = st.mtimeMs;
   const prev = store.fileState(path);
-  if (prev && prev.size === size && prev.mtime === mtime) return null;
+  const stateKey = `codex-file:${path}`;
+  const saved = store.getMeta(stateKey);
+  const codex = saved !== null || /"type"\s*:\s*"session_meta"/.test(await Bun.file(path).slice(0, 4096).text());
+  let state: CodexState | undefined;
+  if (saved) {
+    try { const value = JSON.parse(saved); if (value.version === 1) state = value; } catch { /* Rebuild invalid parser state. */ }
+  }
+  const settledTail = prev && prev.offset < size && now - mtime > SETTLE_MS;
+  if (prev && prev.size === size && prev.mtime === mtime && !settledTail && (!codex || state)) return null;
   // Appended since last time: read from the consumed offset; rewritten or truncated: read it all.
-  const offset = prev && size >= prev.offset ? prev.offset : 0;
+  const offset = prev && size >= prev.size && !(size === prev.size && mtime !== prev.mtime) && (!codex || state) ? prev.offset : 0;
   const text = await Bun.file(path).slice(offset).text();
   let cut = text.lastIndexOf("\n") + 1;
   if (cut < text.length && now - mtime > SETTLE_MS) cut = text.length;
   const chunk = text.slice(0, cut);
   const consumed = offset + Buffer.byteLength(chunk);
-  const parsed = parseTranscript(chunk, path);
-  store.write(parsed, { path, source, size, mtime, offset: consumed });
+  const parsed = codex ? parseCodexTranscript(chunk, path, offset ? state : undefined) : parseTranscript(chunk, path);
+  store.write(parsed, { path, source, size, mtime, offset: consumed }, "state" in parsed ? { key: stateKey, value: JSON.stringify(parsed.state) } : undefined);
   return { fresh: !prev, turns: parsed.turns.length, sessions: parsed.sessions.length, dispatches: parsed.dispatches.length };
 }

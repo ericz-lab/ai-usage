@@ -1,8 +1,10 @@
 # ai-usage
 
-**What Claude Code spent, on this machine and the others, from the CLI's own transcripts.**
+**What Claude Code and Codex spent, on this machine and the others, from the CLI's own transcripts.**
 
 Claude Code writes a JSONL transcript for every session under `~/.claude/projects`, whatever the plan: each model response carries its model and the four token counts (input, output, cache write, cache read). ai-usage reads those files, keeps the numbers in a small SQLite cache and shows them as a dashboard: tokens and cost estimates by day, by hour, by model, by project and branch, by session, by subagent type, and by machine.
+
+Codex history comes from `~/.codex/sessions` and `~/.codex/archived_sessions` (or the same directories under `CODEX_HOME`). Its token records feed the same charts, filters, project/session tables, widget and shared-store sync. No subscription login is needed to read local history.
 
 It is an [ai-space](https://github.com/ericz-lab/ai-space) app and ships with it as a default app: a fresh space installs it on `init`. It also runs on its own with `bun src/index.ts`.
 
@@ -89,4 +91,25 @@ The integration follows [CodexBar's OAuth usage source](https://github.com/steip
 
 Credentials are read on each poll and never refreshed or rewritten. If the token expires, renew it through Codex; `/api/status` exposes `codexLimits` with the latest result. Failed requests retain the last successful snapshot and its original timestamp. No token is returned by the API or published to shared storage. Codex snapshots use `<machine>/limits-codex.json`; Claude keeps `<machine>/limits.json`, so older collectors remain compatible. Each provider/account is deduplicated independently. Collector instances publish both providers without serving the dashboard.
 
-This adds subscription quota bars, not Codex transcript token counts or cost estimates. Token/cost charts still describe Claude transcripts. The usage endpoint is undocumented; unexpected responses appear as an unavailable reading rather than invented usage.
+The usage endpoint is undocumented; unexpected responses appear as an unavailable reading rather than invented usage.
+
+## Codex historical tokens and costs
+
+The parser follows [CodexBar's local history approach](https://github.com/steipete/CodexBar/blob/main/docs/codex.md): `session_meta` identifies the session/project/branch, `turn_context` selects the model, and `event_msg` / `token_count` supplies per-request and cumulative usage. Repeated cumulative snapshots and the duplicate `token_usage_record` representation are not counted again. Input already includes cached tokens, so cache reads/writes are split out; reasoning tokens already belong to output. Explicit child history ordinals (or fork timestamps for older logs) exclude inherited context. Unattributed models remain `codex-unknown` and unpriced.
+
+Only appended bytes are parsed after the initial scan. Model and counter state survive service restarts; incomplete trailing lines wait until settled. Stable session/event IDs prevent archive moves, copied files and shared-store imports from counting usage again. Only normalized usage and session metadata are shared, not prompt or response bodies. Explicit `USAGE_SOURCES` replaces the default directories; include both Codex directories if you use this setting.
+
+OpenAI prices are API-equivalent estimates verified on **2026-09-23** from the [pricing table](https://developers.openai.com/api/docs/pricing) and model cards ([Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra), [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), [GPT-5.4](https://developers.openai.com/api/docs/models/gpt-5.4)). Rates in dollars per million tokens:
+
+| Model | Input | Cache read | Cache write | Output |
+| --- | --- | --- | --- | --- |
+| GPT-6 Astra | 10 | 1 | 12.5 | 50 |
+| GPT-6 Sol | 2 | 0.2 | 2.5 | 10 |
+| GPT-6 Luna | 0.1 | 0.01 | 0.125 | 0.5 |
+| GPT-5.6 Sol | 4 | 0.4 | 5 | 20 |
+| GPT-5.6 Terra | 2 | 0.2 | 2.5 | 12 |
+| GPT-5.6 Luna | 0.2 | 0.02 | 0.25 | 1.2 |
+| GPT-5.4 | 2.5 | 0.25 | n/a | 15 |
+| GPT-5.3 Codex | 1.75 | 0.175 | n/a | 14 |
+
+For GPT-6, GPT-5.6 and GPT-5.4, input above 272K tokens (including cached input) applies the long-context multipliers per recorded request: 2x input/cache and 1.5x output. Explicit `service_tier: priority` or `fast` uses 2x rates for GPT-6 and GPT-5.3 Codex; other unverified tiers remain unpriced. When the log omits a tier, the estimate uses Standard pricing. Historical rows use this price table, not historical invoices. Unknown models or unsupported cache-write pricing show n/a, including in aggregates; subscription fees and tool charges are not inferred.

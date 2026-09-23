@@ -154,7 +154,7 @@ export function summary(store: Store, opts: SummaryOptions): Summary {
   const rows = store.turnsBetween(from, to).filter((r) => (!pick || pick.has(r.model)) && (!pickMachine || pickMachine.has(r.machine)));
   const sessionMeta = new Map(store.sessionsSince(from).map((s) => [s.session_id, s]));
   const agentType = new Map(store.agents().map((a) => [a.agent_id, a]));
-  const costs = rows.map((r) => costOf(r.model, { input: r.input, output: r.output, cacheRead: r.cache_read, cacheWrite: r.cache_write }));
+  const costs = rows.map((r) => costOf(r.model, { input: r.input, output: r.output, cacheRead: r.cache_read, cacheWrite: r.cache_write, serviceTier: r.service_tier }));
 
   const totals = { ...zero(), sessions: 0, days: 0, subagentTokens: 0, subagentTurns: 0, perDay: { tokens: 0, cost: 0 as number | null } };
   const byDay = new Map<string, { tokens: number; cost: number | null; byModel: Record<string, number> }>();

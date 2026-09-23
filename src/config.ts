@@ -23,9 +23,10 @@ export type Config = {
 
 export const DEFAULT_PORT = 8880;
 
-/** Claude Code's own transcript directory and the Xcode integration's copy of it. */
-export function defaultSources(home = homedir()): string[] {
-  return [join(home, ".claude", "projects"), join(home, "Library", "Developer", "Xcode", "CodingAssistant", "ClaudeAgentConfig", "projects")];
+/** Claude Code, its Xcode integration, and native/archived Codex sessions. */
+export function defaultSources(home = homedir(), env: Record<string, string | undefined> = process.env): string[] {
+  const codex = expandHome(env.CODEX_HOME?.trim() || join(home, ".codex"), home);
+  return [join(home, ".claude", "projects"), join(home, "Library", "Developer", "Xcode", "CodingAssistant", "ClaudeAgentConfig", "projects"), join(codex, "sessions"), join(codex, "archived_sessions")];
 }
 
 export function expandHome(p: string, home = homedir()): string {
@@ -59,7 +60,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port,
     role,
     dbPath: dbPathFrom(env),
-    sources: sources.length ? sources : defaultSources(home),
+    sources: sources.length ? sources : defaultSources(home, env),
     scanIntervalMs: interval * 1000,
   };
 }

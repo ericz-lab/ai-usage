@@ -4,7 +4,7 @@
 spec: 1
 name: ai-usage
 title: AI Usage
-description: What Claude Code spent on this machine and its peers, read from the CLI's own transcripts. Tokens, cost estimates, models, projects, sessions and subagents.
+description: What Claude Code and Codex spent on this machine and its peers, read from the CLI's own transcripts. Tokens, cost estimates, models, projects, sessions and subagents.
 icon: icon.svg
 # The page. On a laptop the loopback address works as is; on a server set
 # SPACE_APP_URL_AI_USAGE=https://usage.example.com in the workspace .env to
@@ -15,7 +15,7 @@ repo: https://github.com/ericz-lab/ai-usage.git
 i18n:
   zh:
     title: AI 用量
-    description: 本机和 peer 机器上 Claude Code 的消耗，直接从 CLI 的转录记录统计：Token、估算费用、模型、项目、会话和子智能体。
+    description: 本机和 peer 机器上 Claude Code 和 Codex 的消耗，直接从 CLI 的转录记录统计：Token、估算费用、模型、项目、会话和子智能体。
     widgets:
       usage: { title: AI 用量 }
 

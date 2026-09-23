@@ -1,7 +1,7 @@
 {
   "name": "ai-usage",
   "version": "0.1.0",
-  "description": "AI usage dashboard for one machine: what Claude Code spent, read from its own transcripts. An ai-space app.",
+  "description": "AI usage dashboard for one machine: what Claude Code and Codex spent, read from its own transcripts. An ai-space app.",
   "license": "MIT",
   "type": "module",
   "private": true,
