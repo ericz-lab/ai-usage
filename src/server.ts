@@ -44,6 +44,7 @@ export type ServerOptions = {
   peers?: Peers;
   /** Plan usage limits (limits.ts); omitted = the card stays empty. */
   limits?: Limits;
+  codexLimits?: Limits;
   /** The page module (Bun HTML import); omitted in tests. */
   page?: unknown;
   /** Reads run a scan first when the last one is older than this. */
@@ -56,11 +57,12 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 const fmtTokens = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 1 : 2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}K` : String(n));
 const fmtCost = (c: number | null) => (c === null ? "n/a" : c >= 100 ? `$${c.toFixed(0)}` : c >= 1 ? `$${c.toFixed(2)}` : `$${c.toFixed(3)}`);
-const limitName = (l: Limit) => (l.kind === "session" ? "session" : l.label ? `week ${l.label}` : "week");
+const limitName = (l: Limit) => (l.label ? `${l.group === "session" ? "session" : "week"} ${l.label}` : l.group === "session" ? "session" : "week");
 const list = (v: string | null) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 export function createApp(opts: ServerOptions) {
   const { store, config, machine } = opts;
+  const snapshots = async () => (await Promise.all([opts.limits?.snapshots() ?? [], opts.codexLimits?.snapshots() ?? []])).flat();
   const now = opts.now ?? Date.now;
   const freshMs = opts.freshMs ?? 60_000;
   const log = opts.log ?? ((l: string) => console.log(`[ai-usage] ${l}`));
@@ -85,7 +87,7 @@ export function createApp(opts: ServerOptions) {
   /** Scan here, then sync the shared store (throttled unless forced) or pull the peers; their failures are recorded, not thrown. */
   const refresh = async (force = true): Promise<ScanResult> => {
     const r = await scan();
-    if (force) await opts.limits?.tick(true);
+    if (force) await Promise.all([opts.limits?.tick(true), opts.codexLimits?.tick(true)]);
     if (opts.shared) await opts.shared.shared.sync(force);
     else if (opts.peers?.enabled) await opts.peers.pullAll();
     return r;
@@ -114,6 +116,7 @@ export function createApp(opts: ServerOptions) {
     peers: opts.shared ? [] : (opts.peers?.states() ?? []),
     peersEnabled: !opts.shared && (opts.peers?.enabled ?? false),
     limits: opts.limits?.state() ?? null,
+    codexLimits: opts.codexLimits?.state() ?? null,
   });
 
   const routes: Record<string, unknown> = {
@@ -153,7 +156,7 @@ export function createApp(opts: ServerOptions) {
         return json({ ok: true, machine, ...store.exportSince(since) });
       },
     },
-    "/api/limits": { GET: async () => json({ ok: true, snapshots: (await opts.limits?.snapshots()) ?? [], local: opts.limits?.state() ?? null }) },
+    "/api/limits": { GET: async () => json({ ok: true, snapshots: await snapshots(), local: opts.limits?.state() ?? null, codexLocal: opts.codexLimits?.state() ?? null }) },
     "/api/widget": {
       GET: async (req: Request) => {
         try {
@@ -162,7 +165,7 @@ export function createApp(opts: ServerOptions) {
           const today = summary(store, { range: "today", tz, now: now(), sessionLimit: 1 });
           const week = summary(store, { range: "7d", tz, now: now(), sessionLimit: 1 });
           const top = week.byModel[0];
-          const plan = (await opts.limits?.snapshots())?.[0];
+          const plans = await snapshots();
           const at = new Date(now()).toISOString();
           const machines = week.byMachine.length > 1 ? ` · ${week.byMachine.length} machines` : "";
           return json({
@@ -171,7 +174,7 @@ export function createApp(opts: ServerOptions) {
               { text: `Today · ${fmtTokens(today.totals.tokens)} tokens · ${fmtCost(today.totals.cost)} · ${today.totals.sessions} sessions`, url: "/?range=today", time: at },
               { text: `7 days · ${fmtTokens(week.totals.tokens)} tokens · ${fmtCost(week.totals.cost)} · ${fmtCost(week.totals.perDay.cost)} per day${machines}`, url: "/?range=7d", time: at },
               ...(top ? [{ text: `Top model · ${top.model} · ${fmtTokens(top.tokens)} tokens in 7 days`, url: "/?range=7d" }] : []),
-              ...(plan ? [{ text: `Plan · ${plan.limits.map((l) => `${limitName(l)} ${Math.round(l.resetsAt !== null && l.resetsAt <= now() ? 0 : l.percent)}%`).join(" · ")}`, url: "/", time: new Date(plan.fetchedAt).toISOString() }] : []),
+              ...plans.map((plan) => ({ text: `${plan.provider === "codex" ? "Codex" : "Claude"} · ${plan.limits.map((l) => `${limitName(l)} ${Math.round(l.resetsAt !== null && l.resetsAt <= now() ? 0 : l.percent)}%`).join(" · ")}`, url: "/", time: new Date(plan.fetchedAt).toISOString() })),
             ],
           });
         } catch (e) {

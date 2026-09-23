@@ -17,6 +17,7 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 - A scan runs on boot, every `USAGE_SCAN_INTERVAL` seconds, on `POST /api/refresh`, and before any read when the last scan is older than a minute. It is incremental: each file is tracked by size, mtime and the byte offset consumed, and only appended bytes are read (a partial last line waits until the file has been quiet for ten seconds). A full first scan of a year of transcripts takes well under a second per hundred megabytes.
 - The shared store (`src/shared.ts`) is on when `BLOB_URL` is an s3 prefix: after a scan, publish this machine's rows (`<machine>/turns/<utc day>.jsonl`, `sessions.jsonl`, `agents.jsonl`, `manifest.json` with content hashes) and pull every other machine's changed files, at most every `USAGE_SYNC_INTERVAL` seconds unless the Refresh button forces it. State lives in `meta` (`shared:published`, `shared:seen:<machine>`, `shared:machine:<machine>`, `shared:last`).
 - Plan limits (`src/limits.ts`): every five minutes, with the CLI's OAuth login (`~/.claude/.credentials.json`, or the macOS keychain item `Claude Code-credentials`), `GET https://api.anthropic.com/api/oauth/usage`; the token is read, never refreshed (a refresh would rotate the CLI's refresh token). The snapshot is kept in memory and, with a shared store, put at `<machine>/limits.json` outside the manifest; the dashboard reads each known machine's file (cached 60 s) and keeps the newest per account (`accountUuid` from `~/.claude.json`).
+- Codex plan limits (`src/codex-limits.ts`, scheduled by `Limits` with `provider: "codex"`): read `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), call `https://chatgpt.com/backend-api/wham/usage` with the bearer token and account header, publish `<machine>/limits-codex.json`. Never refresh or rewrite credentials. Provider snapshots and status remain separate; older snapshots without a provider are Claude.
 - `USAGE_ROLE=collector` (`config.ts`): the shared store is publish-only and `server.ts` registers no page, summary or widget route (they answer 404 with a line). Status, refresh, export and healthz stay.
 - Without a shared store, peers are pulled after every scan (`src/peers.ts`): discovery through `SPACE_API_URL` (`GET /api/apps?all=1`, entries named `ai-usage` with a `peer`) plus `USAGE_PEERS`; each pull asks `/api/export?since=` from the newest row held for that machine minus two days; results are upserted and the outcome kept in `meta` (`peer:<name>`).
 - Runs as the user-level systemd unit `ai-usage` from `~/.ai-space/apps/ai-usage`, port 8880, health `GET /healthz`.
@@ -32,6 +33,7 @@ src/stats.ts         * summary(): one window, one model and machine filter, one 
 src/server.ts        * routes: /api/summary, /api/status, /api/refresh, /api/export, /api/limits, /api/widget, /healthz, /icon.svg
 src/shared.ts        * the shared store: object-store interface (S3 and in-memory), publish, pull
 src/limits.ts          plan usage limits: read the CLI's login, fetch /api/oauth/usage, publish and merge snapshots
+src/codex-limits.ts    native Codex login and subscription-window parsing
 src/peers.ts           peer discovery and pulls (the fallback without a shared store)
 src/pricing.ts         the price table, costOf, shortModel, modelRank
 src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*)
@@ -73,6 +75,7 @@ bash deploy/install.sh            # install the user unit on a server
 | --- | --- | --- |
 | `PORT` | port on 127.0.0.1 | 8880 |
 | `DATABASE_URL` | `sqlite://<path>` of the cache (ai-space sets it) | `$SPACE_APP_DATA_DIR/usage.db`, else `data/usage.db` |
+| `CODEX_HOME` | Codex CLI directory containing `auth.json` | `~/.codex` |
 | `USAGE_SOURCES` | comma-separated transcript directories | `~/.claude/projects` and the Xcode integration directory |
 | `USAGE_SCAN_INTERVAL` | seconds between scans | 300 |
 | `USAGE_ROLE` | `dashboard` (everything) or `collector` (scan and publish only; no page, no pulls) | dashboard |

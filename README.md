@@ -12,7 +12,7 @@ The idea and the transcript format notes come from [phuryn/claude-usage](https:/
 
 - **Range**: 5 hours (a subscription's rolling window), today, 7, 30, 90 days, all time; in the viewer's time zone.
 - **Filters**: models (colours follow the model, not its rank, so a filter never repaints the survivors) and machines.
-- **Plan usage limits**: the bars of the CLI's `/usage` (current session, weekly all models, weekly per model) with their reset times, read from the endpoint the CLI itself calls with this machine's Claude subscription login. The token is only read, never refreshed, so a machine whose CLI has not run lately reports an expired token; with the shared store every machine publishes its reading (`<machine>/limits.json`) and the dashboard shows the newest one per account. Refreshed every five minutes.
+- **Plan usage limits**: Claude and Codex subscription usage, with session/weekly percentages and reset times. Codex also shows model-specific windows when supplied by the API. Each provider refreshes every five minutes; shared storage keeps the newest reading per provider/account.
 - **Tiles**: tokens (with the subagents' share), estimated cost, sessions, turns, per-day average.
 - **Charts**: daily usage stacked by model, hourly distribution (average per active day), by model, by machine, top projects, subagents by type. Every mark has a tooltip.
 - **Tables**: cost by model with the four token kinds, sessions (project, topic, model, last active, duration, turns, tokens, cost), subagent dispatches, cost by project, cost by project and branch. Sortable, collapsible, the long ones fold.
@@ -82,3 +82,11 @@ Sessions that run server-side and write no local transcript (Claude's cloud sess
 ## License
 
 MIT.
+
+## Codex subscription usage
+
+The integration follows [CodexBar's OAuth usage source](https://github.com/steipete/CodexBar/blob/main/docs/codex.md): read `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) and request `https://chatgpt.com/backend-api/wham/usage` with the access token and `ChatGPT-Account-Id`. Log in with `codex login` on the machine running ai-usage. API-key-only authentication does not provide subscription limits.
+
+Credentials are read on each poll and never refreshed or rewritten. If the token expires, renew it through Codex; `/api/status` exposes `codexLimits` with the latest result. Failed requests retain the last successful snapshot and its original timestamp. No token is returned by the API or published to shared storage. Codex snapshots use `<machine>/limits-codex.json`; Claude keeps `<machine>/limits.json`, so older collectors remain compatible. Each provider/account is deduplicated independently. Collector instances publish both providers without serving the dashboard.
+
+This adds subscription quota bars, not Codex transcript token counts or cost estimates. Token/cost charts still describe Claude transcripts. The usage endpoint is undocumented; unexpected responses appear as an unavailable reading rather than invented usage.

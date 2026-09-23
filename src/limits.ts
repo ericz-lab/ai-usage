@@ -1,10 +1,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { CODEX_USAGE_URL, codexPlan, parseCodexLimits, readCodexCredentials } from "./codex-limits.ts";
 import type { ObjectStore } from "./shared.ts";
 
 /**
- * Plan usage limits: the bars Claude Code's /usage shows (current session,
- * weekly all models, weekly per model), read from the endpoint the CLI itself
+ * Plan usage limits for Claude and Codex (one instance per provider).
+ * Claude Code's /usage shows current session,
+ * weekly all models and weekly per model, read from the endpoint the CLI itself
  * calls, with the CLI's own OAuth login on this machine.
  *
  *   GET https://api.anthropic.com/api/oauth/usage
@@ -15,7 +17,8 @@ import type { ObjectStore } from "./shared.ts";
  * token and simply reports that; another machine on the same account fills in.
  *
  * With the shared store each machine publishes its snapshot as
- * `<machine>/limits.json` (outside the manifest, so pull ignores it), and the
+ * `<machine>/limits.json` (Claude) or `limits-codex.json` (Codex), outside
+ * the manifest, and the
  * dashboard reads every known machine's file and keeps the newest per account.
  */
 
@@ -33,8 +36,10 @@ export type Limit = {
 };
 
 export type LimitsSnapshot = {
+  /** Missing on older shared snapshots means Claude. */
+  provider?: "claude" | "codex";
   machine: string;
-  /** accountUuid from the CLI's ~/.claude.json; the key two machines on one account share. */
+  /** Claude accountUuid or Codex account_id; shared by machines on the same provider account. */
   account: string | null;
   plan: string | null;
   tier: string | null;
@@ -121,6 +126,7 @@ export function parseLimits(body: unknown): Limit[] {
 }
 
 export type LimitsOptions = {
+  provider?: "claude" | "codex";
   machine: string;
   /** The shared store; without it the snapshot stays local. */
   objects?: ObjectStore;
@@ -138,7 +144,6 @@ export type LimitsOptions = {
 
 const FORCED_MIN_MS = 30_000;
 const REMOTE_TTL_MS = 60_000;
-const KEY = "limits.json";
 
 export class Limits {
   private readonly opts: LimitsOptions;
@@ -157,14 +162,18 @@ export class Limits {
     this.intervalMs = opts.intervalMs ?? 5 * 60_000;
   }
 
+  private get provider() { return this.opts.provider ?? "claude"; }
+  private get key() { return this.provider === "codex" ? "limits-codex.json" : "limits.json"; }
+
   state(): LimitsState {
     return { ...this.st };
   }
 
   /** Fetch this machine's limits when due (forced: when the last attempt is over 30 s old), then publish them. Never throws. */
   tick(force = false): Promise<void> {
+    if (this.inflight) return this.inflight;
     const since = this.now() - (this.st.attemptedAt ?? 0);
-    if (since < (force ? FORCED_MIN_MS : this.intervalMs)) return Promise.resolve();
+    if (this.st.attemptedAt !== null && since < (force ? FORCED_MIN_MS : this.intervalMs)) return Promise.resolve();
     if (!this.inflight)
       this.inflight = this.fetchOwn().finally(() => {
         this.inflight = null;
@@ -175,38 +184,39 @@ export class Limits {
   private async fetchOwn(): Promise<void> {
     this.st.attemptedAt = this.now();
     const fail = (error: string) => {
-      if (error !== this.st.error) this.log(`limits: ${error}`);
+      if (error !== this.st.error) this.log(`limits (${this.provider}): ${error}`);
       this.st = { ...this.st, ok: false, error };
     };
     let creds: Credentials | null;
     try {
-      creds = await (this.opts.credentials ?? (() => readCredentials()))();
+      creds = await (this.opts.credentials ?? (() => this.provider === "codex" ? readCodexCredentials() : readCredentials()))();
     } catch (e) {
       return fail(`credentials unreadable: ${(e as Error).message}`);
     }
-    if (!creds) return fail("no Claude subscription login on this machine");
-    if (creds.expiresAt !== null && creds.expiresAt <= this.now()) return fail("the CLI's token has expired; it renews the next time claude runs here");
+    if (!creds) return fail(`no ${this.provider === "codex" ? "Codex" : "Claude"} subscription login on this machine`);
+    if (creds.expiresAt !== null && creds.expiresAt <= this.now()) return fail(`the CLI's token has expired; run ${this.provider === "codex" ? "codex login" : "claude"} here to renew it`);
     let body: unknown;
     try {
-      const r = await (this.opts.fetch ?? fetch)(USAGE_URL, {
-        headers: { authorization: `Bearer ${creds.token}`, "anthropic-beta": "oauth-2025-04-20", accept: "application/json" },
+      const r = await (this.opts.fetch ?? fetch)(this.provider === "codex" ? CODEX_USAGE_URL : USAGE_URL, {
+        headers: { authorization: `Bearer ${creds.token}`, ...(this.provider === "codex" ? (creds.account ? { "ChatGPT-Account-Id": creds.account } : {}) : { "anthropic-beta": "oauth-2025-04-20" }), accept: "application/json" },
         signal: AbortSignal.timeout(15_000),
+        redirect: "error",
       });
       if (!r.ok) return fail(`usage endpoint answered ${r.status}`);
       body = await r.json();
     } catch (e) {
       return fail(`usage endpoint unreachable: ${(e as Error).message}`);
     }
-    const limits = parseLimits(body);
+    const limits = this.provider === "codex" ? parseCodexLimits(body) : parseLimits(body);
     if (!limits.length) return fail("usage endpoint returned no limits");
-    this.local = { machine: this.opts.machine, account: creds.account, plan: creds.plan, tier: creds.tier, fetchedAt: this.now(), limits };
-    if (!this.st.ok) this.log(`limits: reading plan usage (${creds.plan ?? "plan"})`);
+    this.local = { provider: this.provider, machine: this.opts.machine, account: creds.account, plan: (this.provider === "codex" ? codexPlan(body) : null) ?? creds.plan, tier: creds.tier, fetchedAt: this.now(), limits };
+    if (!this.st.ok) this.log(`limits (${this.provider}): reading plan usage (${this.local.plan ?? "plan"})`);
     this.st = { ok: true, error: null, fetchedAt: this.local.fetchedAt, attemptedAt: this.st.attemptedAt };
     if (this.opts.objects)
       try {
-        await this.opts.objects.put(`${this.opts.machine}/${KEY}`, JSON.stringify(this.local));
+        await this.opts.objects.put(`${this.opts.machine}/${this.key}`, JSON.stringify(this.local));
       } catch (e) {
-        this.log(`limits: publish failed: ${(e as Error).message}`);
+        this.log(`limits (${this.provider}): publish failed: ${(e as Error).message}`);
       }
   }
 
@@ -230,10 +240,10 @@ export class Limits {
       await Promise.all(
         names.map(async (n) => {
           try {
-            const text = await this.opts.objects!.get(`${n}/${KEY}`);
+            const text = await this.opts.objects!.get(`${n}/${this.key}`);
             if (!text) return null;
             const s = JSON.parse(text) as LimitsSnapshot;
-            return Array.isArray(s.limits) && typeof s.fetchedAt === "number" ? { ...s, machine: n } : null;
+            return (s.provider ?? "claude") === this.provider && Array.isArray(s.limits) && typeof s.fetchedAt === "number" ? { ...s, machine: n } : null;
           } catch {
             return null;
           }

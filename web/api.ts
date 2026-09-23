@@ -44,7 +44,7 @@ export type Status = {
 };
 
 export type Limit = { kind: string; group: string; label: string | null; percent: number; resetsAt: number | null; severity: string };
-export type LimitsSnapshot = { machine: string; account: string | null; plan: string | null; tier: string | null; fetchedAt: number; limits: Limit[] };
+export type LimitsSnapshot = { provider?: "claude" | "codex"; machine: string; account: string | null; plan: string | null; tier: string | null; fetchedAt: number; limits: Limit[] };
 export type LimitsReply = { ok: boolean; snapshots: LimitsSnapshot[] };
 
 /** `max` + `default_claude_max_20x` -> `Max (20x)`. */

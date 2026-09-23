@@ -213,3 +213,24 @@ describe("store upserts", () => {
     expect(store.fileState("/a")).toMatchObject({ size: 4, offset: 4 });
   });
 });
+
+test("refresh, limits, status and widget include both providers without merging equal account ids", async () => {
+  const { Limits } = await import("./limits.ts");
+  const store = new Store(":memory:");
+  const common = { machine: "local", now: () => NOW, credentials: async () => ({ token: "secret", account: "same", expiresAt: null, plan: "pro", tier: null }) };
+  const limits = new Limits({ ...common, fetch: (async () => Response.json({ five_hour: { utilization: 10 } })) as unknown as typeof fetch });
+  const codexLimits = new Limits({ ...common, provider: "codex", fetch: (async () => Response.json({ rate_limit: { primary_window: { used_percent: 25, limit_window_seconds: 18000 } } })) as unknown as typeof fetch });
+  const app = createApp({ store, config, machine: "local", limits, codexLimits, now: () => NOW, scan: async () => scanResult });
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, routes: app.routes as never });
+  const base = `http://127.0.0.1:${server.port}`;
+  try {
+    const refresh = await (await fetch(`${base}/api/refresh`, { method: "POST" })).json();
+    expect(refresh.limits.ok).toBe(true);
+    expect(refresh.codexLimits.ok).toBe(true);
+    const result = await (await fetch(`${base}/api/limits`)).json();
+    expect(result.snapshots.map((s: { provider: string }) => s.provider)).toEqual(["claude", "codex"]);
+    expect(JSON.stringify(result)).not.toContain("secret");
+    const widget = await (await fetch(`${base}/api/widget`)).json();
+    expect(widget.items.map((i: { text: string }) => i.text)).toEqual(expect.arrayContaining(["Claude · session 10%", "Codex · session 25%"]));
+  } finally { server.stop(true); store.close(); }
+});

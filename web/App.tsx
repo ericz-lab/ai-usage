@@ -161,19 +161,16 @@ function LimitsCard({ snaps, lang, t, collapsed, onToggle }: { snaps: LimitsSnap
     <Card
       id="limits"
       title={t("limits")}
-      hint={first ? planName(first.plan, first.tier) : undefined}
       right={first ? <span className="hint" title={t("limitsHint", { machine: first.machine })}>{t("limitsFrom", { machine: first.machine, ago: relTime(first.fetchedAt, lang) })}</span> : undefined}
       collapsed={collapsed}
       onToggle={onToggle}
     >
       {!first && <p className="note">{t("limitsNone")}</p>}
-      {snaps.map((s, i) => (
-        <div key={s.account ?? s.machine} className="limits">
-          {i > 0 && (
-            <div className="limits-group">
-              {planName(s.plan, s.tier)} · {t("limitsFrom", { machine: s.machine, ago: relTime(s.fetchedAt, lang) })}
-            </div>
-          )}
+      {snaps.map((s) => (
+        <div key={`${s.provider ?? "claude"}/${s.account ?? s.machine}`} className="limits">
+          <div className="limits-group">
+            {t(s.provider === "codex" ? "provider.codex" : "provider.claude")} · {planName(s.plan, s.tier)} · {t("limitsFrom", { machine: s.machine, ago: relTime(s.fetchedAt, lang) })}
+          </div>
           {["session", "weekly"].map((g) => {
             const rows = s.limits.filter((l) => (g === "session" ? l.group === "session" : l.group !== "session"));
             if (!rows.length) return null;

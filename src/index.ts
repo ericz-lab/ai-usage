@@ -85,7 +85,8 @@ async function main(): Promise<void> {
   if (command !== "serve") throw new Error(`unknown command: ${command} (expected serve, scan, today or stats)`);
 
   const limits = new Limits({ machine, log, publishOnly: config.role === "collector", ...(objects ? { objects: objects.objects, others: () => shared!.shared.machines().map((m) => m.name) } : {}) });
-  const app = createApp({ store, config, machine, page: index, scan, peers, limits, log, ...(shared ? { shared } : {}) });
+  const codexLimits = new Limits({ provider: "codex", machine, log, publishOnly: config.role === "collector", ...(objects ? { objects: objects.objects, others: () => shared!.shared.machines().map((m) => m.name) } : {}) });
+  const app = createApp({ store, config, machine, page: index, scan, peers, limits, codexLimits, log, ...(shared ? { shared } : {}) });
   const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, routes: app.routes as never, development: !!process.env.SPACE_DEV });
   log(`listening on http://127.0.0.1:${server.port} · ${machine} (${config.role}) · cache ${config.dbPath} · sources ${config.sources.join(", ")}${shared ? ` · shared store ${shared.url} every ${syncInterval} s` : peers.enabled ? " · peers on" : ""}`);
   const tick = () => app.refresh(false).catch((e) => log(`refresh failed: ${(e as Error).message}`));
@@ -93,7 +94,8 @@ async function main(): Promise<void> {
   const timer = setInterval(tick, config.scanIntervalMs);
   // The limits keep their own clock (five minutes between fetches); this only asks whether one is due.
   limits.tick();
-  const limitsTimer = setInterval(() => limits.tick(), 60_000);
+  codexLimits.tick();
+  const limitsTimer = setInterval(() => { limits.tick(); codexLimits.tick(); }, 60_000);
 
   const stop = () => {
     clearInterval(timer);
