@@ -190,6 +190,7 @@ export function parseTranscript(text: string, path = ""): Parsed {
 // ---------------------------------------------------------------- incremental scan
 
 export type ScanResult = {
+  ledger?: { imported: number; error: string | null };
   sources: string[];
   files: number;
   newFiles: number;

@@ -1,5 +1,7 @@
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+
+import type { LedgerConfig } from "./space-ledger.ts";
 
 /**
  * Environment -> config. Everything has a default so `bun src/index.ts` works
@@ -11,6 +13,7 @@ import { join, resolve } from "node:path";
 export type Role = "dashboard" | "collector";
 
 export type Config = {
+  ledger?: LedgerConfig;
   port: number;
   role: Role;
   /** SQLite file holding the scanned turns; a cache that can be deleted and rebuilt. */
@@ -56,7 +59,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (role !== "dashboard" && role !== "collector") throw new Error(`USAGE_ROLE must be dashboard or collector, got ${env.USAGE_ROLE}`);
   const interval = Number(env.USAGE_SCAN_INTERVAL ?? 300);
   if (!Number.isFinite(interval) || interval < 10) throw new Error(`USAGE_SCAN_INTERVAL must be at least 10 seconds, got ${env.USAGE_SCAN_INTERVAL}`);
+  const spaceHome = resolve(expandHome(env.SPACE_HOME?.trim() || (env.SPACE_APP_DATA_DIR ? dirname(dirname(env.SPACE_APP_DATA_DIR)) : join(home, ".ai-space")), home));
+  const ledgerPath = env.USAGE_SPACE_DB?.trim() || env.SPACE_DB?.trim() || join(spaceHome, "data", "space.db");
   return {
+    ledger: {
+      dbPath: ledgerPath === "none" ? null : resolve(expandHome(ledgerPath, home)),
+      runtimesPath: join(spaceHome, "runtimes.yaml"),
+      ...(env.USAGE_CODEX_RUNTIMES !== undefined ? { runtimeNames: env.USAGE_CODEX_RUNTIMES.split(",").map((s) => s.trim()).filter(Boolean) } : {}),
+    },
     port,
     role,
     dbPath: dbPathFrom(env),

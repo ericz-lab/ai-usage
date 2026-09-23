@@ -4,7 +4,7 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 
 ## Rules
 
-1. **The transcripts are the truth; the database is a cache.** Nothing is derived that cannot be rebuilt by deleting `usage.db` and scanning again. Never write to the transcript directories.
+1. **Transcripts and the Space model ledger are the truth; usage.db is a cache.** Everything can be rebuilt by scanning those sources again. Never write to transcript directories or to the Space ledger.
 2. **Count once.** One API response is logged several times while it streams, all with the same `message.id`; the last record wins (`turns` is unique by message id and upserts). Rows pulled from peers keep their ids, so a row has one identity across machines.
 3. **Estimate, do not invent.** A model without a listed price shows n/a, never zero; a group with one unpriced member has a null cost. Prices carry their date (`PRICING_AS_OF`).
 4. **The viewer's day.** Days and hours are computed in the time zone the page sends (`tz`); "today" is the viewer's today. The math lives in `src/stats.ts` only.
@@ -17,6 +17,7 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 - A scan runs on boot, every `USAGE_SCAN_INTERVAL` seconds, on `POST /api/refresh`, and before any read when the last scan is older than a minute. It is incremental: each file is tracked by size, mtime and the byte offset consumed, and only appended bytes are read (a partial last line waits until the file has been quiet for ten seconds). A full first scan of a year of transcripts takes well under a second per hundred megabytes.
 - The shared store (`src/shared.ts`) is on when `BLOB_URL` is an s3 prefix: after a scan, publish this machine's rows (`<machine>/turns/<utc day>.jsonl`, `sessions.jsonl`, `agents.jsonl`, `manifest.json` with content hashes) and pull every other machine's changed files, at most every `USAGE_SYNC_INTERVAL` seconds unless the Refresh button forces it. State lives in `meta` (`shared:published`, `shared:seen:<machine>`, `shared:machine:<machine>`, `shared:last`).
 - Plan limits (`src/limits.ts`): every five minutes, with the CLI's OAuth login (`~/.claude/.credentials.json`, or the macOS keychain item `Claude Code-credentials`), `GET https://api.anthropic.com/api/oauth/usage`; the token is read, never refreshed (a refresh would rotate the CLI's refresh token). The snapshot is kept in memory and, with a shared store, put at `<machine>/limits.json` outside the manifest; the dashboard reads each known machine's file (cached 60 s) and keeps the newest per account (`accountUuid` from `~/.claude.json`).
+- Space ledger (`src/space-ledger.ts`): read the local `space.db` in readonly mode. Import only `origin=run` calls from runtime names whose configured kind is `codex-cli`; these completions use `--ephemeral`. The insert-id cursor and source anchor are checkpointed atomically with normalized rows. Late completions with older timestamps are still imported. Missing usage is skipped; failed calls with recorded usage count. IDs include the originating Space machine, call id and start time. Each call is a synthetic session under `ai-space/<app>`, with its tag/runtime/backend as topic. Shared-store exports treat these as local rows.
 - Codex history (`src/codex-scanner.ts`): native and archived session JSONL; normalize inclusive input into uncached/cache-read/cache-write categories, never add reasoning output twice. The parser state (model, session and cumulative baseline) is stored under `codex-file:<path>` atomically with the file cursor. Session/message IDs are namespaced and stable across archive moves and shared-store copies. Copied child history is excluded by explicit ordinals, otherwise by the fork timestamp. `turns.service_tier` is nullable for old rows and exports.
 - Codex plan limits (`src/codex-limits.ts`, scheduled by `Limits` with `provider: "codex"`): read `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), call `https://chatgpt.com/backend-api/wham/usage` with the bearer token and account header, publish `<machine>/limits-codex.json`. Never refresh or rewrite credentials. Provider snapshots and status remain separate; older snapshots without a provider are Claude.
 - `USAGE_ROLE=collector` (`config.ts`): the shared store is publish-only and `server.ts` registers no page, summary or widget route (they answer 404 with a line). Status, refresh, export and healthz stay.
@@ -29,6 +30,7 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 space.yaml           * the manifest: identity, service, widget, storage
 src/index.ts         * entry point: serve, scan, today, stats
 src/scanner.ts       * Claude parser and incremental scanSources for both CLIs
+src/space-ledger.ts    readonly import of ephemeral Codex calls from the Space ledger
 src/codex-scanner.ts   Codex session metadata, token_count deltas and saved parser state
 src/store.ts         * bun:sqlite schema, upserts, the queries stats needs, export/import for peers
 src/stats.ts         * summary(): one window, one model and machine filter, one time zone -> everything the page shows
@@ -77,6 +79,9 @@ bash deploy/install.sh            # install the user unit on a server
 | --- | --- | --- |
 | `PORT` | port on 127.0.0.1 | 8880 |
 | `DATABASE_URL` | `sqlite://<path>` of the cache (ai-space sets it) | `$SPACE_APP_DATA_DIR/usage.db`, else `data/usage.db` |
+| `USAGE_SPACE_DB` | Space ledger path; `none` disables import | `SPACE_DB`, else workspace `data/space.db` |
+| `USAGE_CODEX_RUNTIMES` | explicit comma-separated Codex runtime names, including retired names | discover `kind: codex-cli` in workspace `runtimes.yaml` |
+| `SPACE_HOME` | workspace containing `runtimes.yaml` | infer from `SPACE_APP_DATA_DIR`, else `~/.ai-space` |
 | `CODEX_HOME` | Codex CLI directory containing `auth.json`, `sessions` and `archived_sessions` | `~/.codex` |
 | `USAGE_SOURCES` | comma-separated transcript directories | Claude projects/Xcode plus Codex sessions/archived_sessions |
 | `USAGE_SCAN_INTERVAL` | seconds between scans | 300 |

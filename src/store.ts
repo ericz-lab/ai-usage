@@ -141,13 +141,13 @@ export class Store {
   }
 
   /** One local transcript's new content and its new file state, in one transaction. */
-  write(parsed: Parsed, file: FileState, parserState?: { key: string; value: string }): void {
+  write(parsed: Parsed, file: FileState | undefined, parserState?: { key: string; value: string }): void {
     this.db.transaction(() => {
       if (parserState) this.setMeta(parserState.key, parserState.value);
       for (const s of parsed.sessions) this.upsertSession("", s);
       for (const t of parsed.turns) this.upsertTurn("", t);
       for (const d of parsed.dispatches) this.upsertDispatch("", d);
-      this.db.query("INSERT OR REPLACE INTO files (path, source, size, mtime, offset) VALUES (?, ?, ?, ?, ?)").run(file.path, file.source, file.size, file.mtime, file.offset);
+      if (file) this.db.query("INSERT OR REPLACE INTO files (path, source, size, mtime, offset) VALUES (?, ?, ?, ?, ?)").run(file.path, file.source, file.size, file.mtime, file.offset);
     })();
   }
 

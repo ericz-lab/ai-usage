@@ -8,7 +8,7 @@ export type Lang = "en" | "zh";
 
 const EN = {
   title: "AI Usage",
-  subtitle: "Claude Code and Codex usage, from local transcripts",
+  subtitle: "Claude Code and Codex usage, from transcripts and app tasks",
   loading: "Loading…",
   unavailable: "The service is not answering: {error}",
   empty: "No usage in this window.",
@@ -89,7 +89,7 @@ const EN = {
   hAgo: "{n} h ago",
   dAgo: "{n} d ago",
   tokensOn: "{tokens} tokens · {cost}",
-  footer: "Turns are read from the JSONL transcripts Claude Code and Codex write locally; every machine's ai-usage publishes its own rows to a shared store (an S3 bucket) and reads the others', so any machine shows them all. Prices as of {asOf}.",
+  footer: "Usage comes from local Claude Code/Codex transcripts and ai-space’s ephemeral Codex task ledger; every machine's ai-usage publishes its own rows to a shared store (an S3 bucket) and reads the others', so any machine shows them all. Prices as of {asOf}.",
   table: "table",
   chart: "chart",
   other: "other",
@@ -110,7 +110,7 @@ const EN = {
 
 const ZH: Record<keyof typeof EN, string> = {
   title: "AI 用量",
-  subtitle: "从本地会话记录统计 Claude Code 和 Codex 的消耗",
+  subtitle: "统计 Claude Code、Codex 会话和应用任务的消耗",
   loading: "加载中…",
   unavailable: "服务没有响应：{error}",
   empty: "这个时间段没有用量。",
@@ -191,7 +191,7 @@ const ZH: Record<keyof typeof EN, string> = {
   hAgo: "{n} 小时前",
   dAgo: "{n} 天前",
   tokensOn: "{tokens} token · {cost}",
-  footer: "轮次来自 Claude Code 和 Codex 在本地写的 JSONL 转录；每台机器的 ai-usage 把自己的记录发布到共享存储（一个 S3 桶）并读取其他机器的，所以在任何一台上都能看到全部。价格截至 {asOf}。",
+  footer: "用量来自 Claude Code、Codex 的本地会话记录及 ai-space 的临时 Codex 任务账本；每台机器的 ai-usage 把自己的记录发布到共享存储（一个 S3 桶）并读取其他机器的，所以在任何一台上都能看到全部。价格截至 {asOf}。",
   table: "表格",
   chart: "图表",
   other: "其他",

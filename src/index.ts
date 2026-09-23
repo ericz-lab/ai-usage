@@ -4,6 +4,7 @@ import { loadConfig } from "./config.ts";
 import { Limits } from "./limits.ts";
 import { Peers, parsePeerList } from "./peers.ts";
 import { shortModel } from "./pricing.ts";
+import { scanSpaceLedger } from "./space-ledger.ts";
 import { scanSources } from "./scanner.ts";
 import { createApp } from "./server.ts";
 import { Shared, objectStoreFromEnv } from "./shared.ts";
@@ -39,7 +40,17 @@ async function main(): Promise<void> {
   const shared = objects ? { url: objects.url, shared: new Shared({ store, objects: objects.objects, machine, intervalMs: syncInterval * 1000, publishOnly: config.role === "collector", log }) } : undefined;
   const command = process.argv[2] ?? "serve";
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const scan = () => scanSources(store, config.sources, { log });
+  const scan = async () => {
+    const result = await scanSources(store, config.sources, { log });
+    if (config.ledger) {
+      result.ledger = await scanSpaceLedger(store, config.ledger, machine);
+      if (result.ledger.error) log(result.ledger.error);
+      if (result.ledger.imported) log(`Space ledger: imported ${result.ledger.imported} Codex calls`);
+      result.turns += result.ledger.imported;
+      result.sessions += result.ledger.imported;
+    }
+    return result;
+  };
 
   if (command === "scan") {
     const r = await scan();
