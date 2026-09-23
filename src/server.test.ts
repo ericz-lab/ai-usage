@@ -234,3 +234,14 @@ test("refresh, limits, status and widget include both providers without merging 
     expect(widget.items.map((i: { text: string }) => i.text)).toEqual(expect.arrayContaining(["Claude · session 10%", "Codex · session 25%"]));
   } finally { server.stop(true); store.close(); }
 });
+
+test("manual refresh remains connected while a history scan exceeds the server idle timeout", async () => {
+  const store = new Store(":memory:");
+  const app = createApp({ store, config, machine: "local", scan: async () => { await Bun.sleep(1500); return scanResult; } });
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 1, routes: app.routes as never });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/api/refresh`, { method: "POST" });
+    expect(response.status).toBe(200);
+    expect((await response.json()).ok).toBe(true);
+  } finally { server.stop(true); store.close(); }
+});

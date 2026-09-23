@@ -143,7 +143,9 @@ export function createApp(opts: ServerOptions) {
       },
     },
     "/api/refresh": {
-      POST: async () => {
+      POST: async (req: Request, server: { timeout(request: Request, seconds: number): void }) => {
+        // A first history sync can take minutes; keep this response open while it runs.
+        server.timeout(req, 0);
         const scanned = await refresh(true);
         return json({ ...status(), scan: scanned });
       },
