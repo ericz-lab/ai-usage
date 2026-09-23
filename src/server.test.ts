@@ -245,3 +245,33 @@ test("manual refresh remains connected while a history scan exceeds the server i
     expect((await response.json()).ok).toBe(true);
   } finally { server.stop(true); store.close(); }
 });
+
+test("summary and widget use refreshed ai-space prices, including after an outage", async () => {
+  const { SpacePricing } = await import("./space-pricing.ts");
+  const { testCatalog } = await import("./testing-pricing.ts");
+  const store = new Store(":memory:");
+  let rate = 10;
+  let offline = false;
+  const pricing = new SpacePricing({ store, now: () => NOW, fetch: (async () => {
+    if (offline) throw new Error("offline");
+    return Response.json({ ...testCatalog, models: { "gpt-6-astra": { ...testCatalog.models["gpt-6-astra"], input: rate } } });
+  }) as unknown as typeof fetch });
+  store.import("source", { sessions: [], agents: [], turns: [{ machine: "", session_id: "gpt", ts: NOW - H, model: "gpt-6-astra", input: 1000, output: 0, cache_read: 0, cache_write: 0, tool: null, message_id: "gpt1", subagent: 0, agent_id: null }] });
+  const app = createApp({ store, config, machine: "here", pricing, scan: async () => scanResult, now: () => NOW, log: () => {} });
+  const server = Bun.serve({ port: 0, routes: app.routes as any, fetch: () => new Response("not found", { status: 404 }) });
+  const base = `http://127.0.0.1:${server.port}`;
+  try {
+    const read = async () => (await (await fetch(`${base}/api/summary?range=all&tz=UTC`)).json()) as { totals: { cost: number }; models: { priced: boolean }[] };
+    expect((await read()).totals.cost).toBe(0.01);
+    rate = 20;
+    await fetch(`${base}/api/refresh`, { method: "POST" });
+    expect((await read()).totals.cost).toBe(0.02);
+    const widget = await (await fetch(`${base}/api/widget?tz=UTC`)).json() as { items: { text: string }[] };
+    expect(widget.items[0]?.text).toContain("$0.020");
+    offline = true;
+    await fetch(`${base}/api/refresh`, { method: "POST" });
+    expect((await read()).totals.cost).toBe(0.02);
+    const status = await (await fetch(`${base}/api/status`)).json() as { gptPricing: { status: string } };
+    expect(status.gptPricing.status).toBe("cached");
+  } finally { server.stop(true); store.close(); }
+});

@@ -1,3 +1,4 @@
+import { testCatalog } from "./testing-pricing.ts";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm, appendFile, utimes } from "node:fs/promises";
 import { join } from "node:path";
@@ -87,7 +88,7 @@ test("scan resumes after restart, settles incomplete lines, deduplicates archive
     const remote = new Store(":memory:");
     try {
       await new Shared({ store: remote, objects, machine: "dashboard", now: () => future }).sync(true);
-      const stats = summary(remote, { range: "all", tz: "UTC", now: NOW + 3000 });
+      const stats = summary(remote, { pricing: testCatalog, range: "all", tz: "UTC", now: NOW + 3000 });
       expect(stats.totals.tokens).toBe(245);
       expect(stats.byModel[0]?.model).toBe("gpt-6-astra");
       expect(stats.totals.cost).toBeCloseTo((100 * 10 + 120 * 1 + 25 * 50) / 1e6);
@@ -112,10 +113,10 @@ test("older cache schema upgrades without losing Claude rows, and peer exports r
     store.write(parsed, { path: "fixture", source: "fixture", size: 1, mtime: 1, offset: 1 });
     peer.import("source", store.exportSince(0));
     expect(peer.turnsBetween(NOW, NOW + 2000)[0]?.service_tier).toBe("fast");
-    const stats = summary(peer, { range: "all", models: ["gpt-6-astra"], tz: "UTC", now: NOW + 2000 });
+    const stats = summary(peer, { pricing: testCatalog, range: "all", models: ["gpt-6-astra"], tz: "UTC", now: NOW + 2000 });
     expect(stats.totals.tokens).toBe(110);
     expect(stats.totals.cost).toBeCloseTo((40 * 10 + 60 + 10 * 50) * 2 / 1e6);
-    const mixed = summary(peer, { range: "all", tz: "UTC", now: NOW + 2000 });
+    const mixed = summary(peer, { pricing: testCatalog, range: "all", tz: "UTC", now: NOW + 2000 });
     expect(mixed.totals.tokens).toBe(112);
     expect(mixed.models).toHaveLength(2);
   } finally { store.close(); peer.close(); }

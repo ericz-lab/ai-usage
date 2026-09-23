@@ -1,3 +1,4 @@
+import type { SpacePricing } from "./space-pricing.ts";
 import type { Config } from "./config.ts";
 import type { Limit, Limits } from "./limits.ts";
 import type { Peers } from "./peers.ts";
@@ -33,6 +34,7 @@ import type { Store } from "./store.ts";
 export const VERSION = "0.1.0";
 
 export type ServerOptions = {
+  pricing?: SpacePricing;
   store: Store;
   config: Config;
   /** How this machine is named on the dashboard. */
@@ -72,8 +74,8 @@ export function createApp(opts: ServerOptions) {
   /** One scan at a time; callers arriving during a scan share it. */
   const scan = (): Promise<ScanResult> => {
     if (!inflight)
-      inflight = opts
-        .scan()
+      inflight = Promise.all([opts.scan(), opts.pricing?.refresh()])
+        .then(([r]) => r)
         .then((r) => {
           last = r;
           if (r.newFiles || r.updatedFiles) log(`scan: ${r.files} files, ${r.newFiles} new, ${r.updatedFiles} updated, ${r.turns} turns, ${r.ms} ms`);
@@ -86,6 +88,7 @@ export function createApp(opts: ServerOptions) {
   };
   /** Scan here, then sync the shared store (throttled unless forced) or pull the peers; their failures are recorded, not thrown. */
   const refresh = async (force = true): Promise<ScanResult> => {
+    await opts.pricing?.refresh(force);
     const r = await scan();
     if (force) await Promise.all([opts.limits?.tick(true), opts.codexLimits?.tick(true)]);
     if (opts.shared) await opts.shared.shared.sync(force);
@@ -94,6 +97,7 @@ export function createApp(opts: ServerOptions) {
   };
   const lastScanAt = (): number => Number(store.getMeta("last_scan") ?? 0);
   const ensureFresh = async (): Promise<void> => {
+    await opts.pricing?.refresh();
     if (now() - lastScanAt() > freshMs) await scan();
   };
 
@@ -106,7 +110,8 @@ export function createApp(opts: ServerOptions) {
     version: VERSION,
     machine,
     role: config.role,
-    pricingAsOf: PRICING_AS_OF,
+    pricingAsOf: `${PRICING_AS_OF} / OpenAI ${opts.pricing?.catalog?.asOf ?? "unavailable"}`,
+    gptPricing: opts.pricing?.state() ?? null,
     sources: config.sources,
     ...store.counts(),
     lastScan: lastScanAt() || null,
@@ -128,7 +133,7 @@ export function createApp(opts: ServerOptions) {
         const range = (u.searchParams.get("range") ?? "7d") as Range;
         if (!RANGES.includes(range)) return json({ ok: false, error: `range must be one of ${RANGES.join(", ")}` }, 400);
         await ensureFresh();
-        const s = summary(store, { range, models: list(u.searchParams.get("models")), machines: toStore(list(u.searchParams.get("machines"))), tz: validTz(u.searchParams.get("tz") ?? undefined), now: now() });
+        const s = summary(store, { pricing: opts.pricing?.catalog, range, models: list(u.searchParams.get("models")), machines: toStore(list(u.searchParams.get("machines"))), tz: validTz(u.searchParams.get("tz") ?? undefined), now: now() });
         return json({
           ok: true,
           ...s,
@@ -164,8 +169,8 @@ export function createApp(opts: ServerOptions) {
         try {
           await ensureFresh();
           const tz = validTz(new URL(req.url).searchParams.get("tz") ?? undefined);
-          const today = summary(store, { range: "today", tz, now: now(), sessionLimit: 1 });
-          const week = summary(store, { range: "7d", tz, now: now(), sessionLimit: 1 });
+          const today = summary(store, { pricing: opts.pricing?.catalog, range: "today", tz, now: now(), sessionLimit: 1 });
+          const week = summary(store, { pricing: opts.pricing?.catalog, range: "7d", tz, now: now(), sessionLimit: 1 });
           const top = week.byModel[0];
           const plans = await snapshots();
           const at = new Date(now()).toISOString();

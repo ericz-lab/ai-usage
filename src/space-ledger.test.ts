@@ -1,3 +1,4 @@
+import { testCatalog } from "./testing-pricing.ts";
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -41,7 +42,7 @@ test("backfills only ephemeral Codex runs, preserving normalized counters and ap
     expect(rows.sessions[0]).toMatchObject({ project: "ai-space/news", topic: "translate · worker · ssh:worker" });
     expect(rows.turns.every((r) => r.message_id.startsWith("space-model:seoul:"))).toBe(true);
     expect(f.db.query("SELECT * FROM model_calls").all()).toEqual(before);
-    const stats = summary(store, { range: "all", tz: "UTC", now: NOW + 2000 });
+    const stats = summary(store, { pricing: testCatalog, range: "all", tz: "UTC", now: NOW + 2000 });
     expect(stats.totals.tokens).toBe(290);
     expect(stats.totals.cost).toBeCloseTo((150 * 0.1 + 120 * 0.01 + 20 * 0.5) / 1e6);
     expect(await scanSpaceLedger(store, f.config, "seoul")).toEqual({ imported: 0, error: null });

@@ -1,3 +1,4 @@
+import { SpacePricing } from "./space-pricing.ts";
 import { hostname } from "node:os";
 import index from "../web/index.html";
 import { loadConfig } from "./config.ts";
@@ -33,6 +34,8 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const machine = process.env.USAGE_MACHINE?.trim() || process.env.SPACE_NAME?.trim() || hostname();
   const store = new Store(config.dbPath);
+  const pricing = new SpacePricing({ store, url: process.env.SPACE_API_URL });
+  await pricing.refresh();
   const peers = new Peers({ store, spaceApiUrl: process.env.SPACE_API_URL?.trim() || undefined, direct: parsePeerList(process.env.USAGE_PEERS), log });
   const objects = objectStoreFromEnv(process.env);
   const syncInterval = Number(process.env.USAGE_SYNC_INTERVAL ?? 1800);
@@ -71,7 +74,7 @@ async function main(): Promise<void> {
     await scan();
     const range = command === "today" ? "today" : ((process.argv[3] ?? "7d") as Range);
     if (!RANGES.includes(range)) throw new Error(`range must be one of ${RANGES.join(", ")}`);
-    const s = summary(store, { range, tz });
+    const s = summary(store, { range, tz, pricing: pricing.catalog });
     const t = s.totals;
     console.log(`${range} (${tz}) · ${fmt(t.tokens)} tokens · ${cost(t.cost)} · ${t.sessions} sessions · ${t.turns} turns`);
     console.log(`  input ${fmt(t.input)} · output ${fmt(t.output)} · cache read ${fmt(t.cacheRead)} · cache write ${fmt(t.cacheWrite)}`);
@@ -97,7 +100,7 @@ async function main(): Promise<void> {
 
   const limits = new Limits({ machine, log, publishOnly: config.role === "collector", ...(objects ? { objects: objects.objects, others: () => shared!.shared.machines().map((m) => m.name) } : {}) });
   const codexLimits = new Limits({ provider: "codex", machine, log, publishOnly: config.role === "collector", ...(objects ? { objects: objects.objects, others: () => shared!.shared.machines().map((m) => m.name) } : {}) });
-  const app = createApp({ store, config, machine, page: index, scan, peers, limits, codexLimits, log, ...(shared ? { shared } : {}) });
+  const app = createApp({ pricing, store, config, machine, page: index, scan, peers, limits, codexLimits, log, ...(shared ? { shared } : {}) });
   const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, routes: app.routes as never, development: !!process.env.SPACE_DEV });
   log(`listening on http://127.0.0.1:${server.port} · ${machine} (${config.role}) · cache ${config.dbPath} · sources ${config.sources.join(", ")}${shared ? ` · shared store ${shared.url} every ${syncInterval} s` : peers.enabled ? " · peers on" : ""}`);
   const tick = () => app.refresh(false).catch((e) => log(`refresh failed: ${(e as Error).message}`));

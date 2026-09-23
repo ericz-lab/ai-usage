@@ -99,20 +99,11 @@ The parser follows [CodexBar's local history approach](https://github.com/steipe
 
 Only appended bytes are parsed after the initial scan. Model and counter state survive service restarts; incomplete trailing lines wait until settled. Stable session/event IDs prevent archive moves, copied files and shared-store imports from counting usage again. Only normalized usage and session metadata are shared, not prompt or response bodies. Explicit `USAGE_SOURCES` replaces the default directories; include both Codex directories if you use this setting.
 
-OpenAI prices are API-equivalent estimates verified on **2026-09-23** from the [pricing table](https://developers.openai.com/api/docs/pricing) and model cards ([Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra), [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), [GPT-5.4](https://developers.openai.com/api/docs/models/gpt-5.4)). Rates in dollars per million tokens:
+GPT rates are maintained by **ai-space**, in its `src/space/model/gpt-prices.json`. ai-usage reads `GET /api/model/pricing` from `SPACE_API_URL` (default `http://127.0.0.1:8700`) on boot, during scans and before summary/widget reads, at most once a minute. Refresh forces a new fetch. There is no embedded GPT price table in this app.
 
-| Model | Input | Cache read | Cache write | Output |
-| --- | --- | --- | --- | --- |
-| GPT-6 Astra | 10 | 1 | 12.5 | 50 |
-| GPT-6 Sol | 2 | 0.2 | 2.5 | 10 |
-| GPT-6 Luna | 0.1 | 0.01 | 0.125 | 0.5 |
-| GPT-5.6 Sol | 4 | 0.4 | 5 | 20 |
-| GPT-5.6 Terra | 2 | 0.2 | 2.5 | 12 |
-| GPT-5.6 Luna | 0.2 | 0.02 | 0.25 | 1.2 |
-| GPT-5.4 | 2.5 | 0.25 | n/a | 15 |
-| GPT-5.3 Codex | 1.75 | 0.175 | n/a | 14 |
+The catalogue specifies its version, verification date, USD unit size, model rates, long-context thresholds/multipliers and optional Fast multiplier. The same rates power ai-space's Model usage. A successful response is cached in usage.db per source URL and survives restarts. On a timeout, invalid response or older ai-space without this endpoint, the last valid catalogue remains usable. With no valid catalogue, GPT costs show n/a; scanning and Claude costs still work. `/api/status` exposes `gptPricing` (source URL, date, fetch time, live/cached/unavailable state and error).
 
-For GPT-6, GPT-5.6 and GPT-5.4, input above 272K tokens (including cached input) applies the long-context multipliers per recorded request: 2x input/cache and 1.5x output. Explicit `service_tier: priority` or `fast` uses 2x rates for GPT-6 and GPT-5.3 Codex; other unverified tiers remain unpriced. When the log omits a tier, the estimate uses Standard pricing. Historical rows use this price table, not historical invoices. Unknown models or unsupported cache-write pricing show n/a, including in aggregates; subscription fees and tool charges are not inferred.
+Costs use the current catalogue, including for historical rows. Input categories stay separate; long-context rules apply per recorded request, and explicit priority/fast tiers use the catalogue multiplier. Unknown models, unsupported tiers or unavailable cache-write prices stay unpriced. These are API-equivalent estimates, not subscription fees or invoices; tool and regional charges are not inferred.
 
 ## ai-space Codex tasks
 

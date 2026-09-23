@@ -6,7 +6,7 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 
 1. **Transcripts and the Space model ledger are the truth; usage.db is a cache.** Everything can be rebuilt by scanning those sources again. Never write to transcript directories or to the Space ledger.
 2. **Count once.** One API response is logged several times while it streams, all with the same `message.id`; the last record wins (`turns` is unique by message id and upserts). Rows pulled from peers keep their ids, so a row has one identity across machines.
-3. **Estimate, do not invent.** A model without a listed price shows n/a, never zero; a group with one unpriced member has a null cost. Prices carry their date (`PRICING_AS_OF`).
+3. **Estimate, do not invent.** A model without a listed price shows n/a, never zero; a group with one unpriced member has a null cost. Claude prices carry their date (`PRICING_AS_OF`); GPT rates and their date come only from ai-space (`/api/model/pricing`), cached in usage.db.
 4. **The viewer's day.** Days and hours are computed in the time zone the page sends (`tz`); "today" is the viewer's today. The math lives in `src/stats.ts` only.
 5. **Loopback only, no token.** The service binds `127.0.0.1:${PORT}`; exposure and login are the space's job. A peer's export is reached through the space's authenticated peer channel, never by exposing this port.
 6. **Configuration is environment.** `.env.example` lists every variable; real values live in `.env` (ignored) or in the `space.env` ai-space writes.
@@ -39,7 +39,9 @@ src/shared.ts        * the shared store: object-store interface (S3 and in-memor
 src/limits.ts          plan usage limits: read the CLI's login, fetch /api/oauth/usage, publish and merge snapshots
 src/codex-limits.ts    native Codex login and subscription-window parsing
 src/peers.ts           peer discovery and pulls (the fallback without a shared store)
-src/pricing.ts         the price table, costOf, shortModel, modelRank
+src/pricing.ts         Claude rates, catalogue-based GPT costOf, shortModel, modelRank
+src/space-pricing.ts   versioned ai-space GPT pricing client, validation and persistent cache
+src/testing-pricing.ts synthetic GPT catalogue used only by tests
 src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*)
 web/App.tsx          * the page: filters in the URL, collapsed cards in localStorage, 60 s refresh
 web/charts.tsx         inline-SVG charts (stacked daily bars, hourly bars, horizontal bars), tooltip, legend
@@ -90,7 +92,7 @@ bash deploy/install.sh            # install the user unit on a server
 | `USAGE_MACHINE` | this machine's name on the dashboard and in the shared store | `SPACE_NAME`, else the hostname |
 | `BLOB_URL`, `S3_*` | the shared store (ai-space sets them from `storage.blobs`) | none = local only |
 | `USAGE_PEERS` | `name=url,...` of ai-usage instances reachable directly | none |
-| `SPACE_API_URL` | the space's API, for peer discovery (ai-space sets it) | none |
+| `SPACE_API_URL` | the space's API, for peer discovery and GPT prices (ai-space sets it) | pricing defaults to loopback:8700 |
 
 ## Known pitfalls
 

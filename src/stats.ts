@@ -1,3 +1,4 @@
+import type { GptCatalog } from "./space-pricing.ts";
 import { costOf, modelRank, priceFor } from "./pricing.ts";
 import type { Store, TurnRow } from "./store.ts";
 
@@ -131,6 +132,7 @@ function group<K extends string>(): { get: (k: K) => Totals; entries: () => [K, 
 }
 
 export type SummaryOptions = {
+  pricing?: GptCatalog;
   range: Range;
   models?: string[];
   /** Machine names as the store labels them ('' = this machine). */
@@ -144,7 +146,7 @@ export function summary(store: Store, opts: SummaryOptions): Summary {
   const now = opts.now ?? Date.now();
   const tz = validTz(opts.tz);
   const { from, to } = windowFor(opts.range, now, tz);
-  const allModels = store.models().map((m) => ({ ...m, priced: priceFor(m.model) !== null }));
+  const allModels = store.models().map((m) => ({ ...m, priced: priceFor(m.model, opts.pricing) !== null }));
   const selected = (opts.models ?? []).filter((m) => allModels.some((a) => a.model === m));
   const pick = selected.length ? new Set(selected) : null;
   const allMachines = store.machines().map((m) => ({ ...m, local: m.machine === "" }));
@@ -154,7 +156,7 @@ export function summary(store: Store, opts: SummaryOptions): Summary {
   const rows = store.turnsBetween(from, to).filter((r) => (!pick || pick.has(r.model)) && (!pickMachine || pickMachine.has(r.machine)));
   const sessionMeta = new Map(store.sessionsSince(from).map((s) => [s.session_id, s]));
   const agentType = new Map(store.agents().map((a) => [a.agent_id, a]));
-  const costs = rows.map((r) => costOf(r.model, { input: r.input, output: r.output, cacheRead: r.cache_read, cacheWrite: r.cache_write, serviceTier: r.service_tier }));
+  const costs = rows.map((r) => costOf(r.model, { input: r.input, output: r.output, cacheRead: r.cache_read, cacheWrite: r.cache_write, serviceTier: r.service_tier }, opts.pricing));
 
   const totals = { ...zero(), sessions: 0, days: 0, subagentTokens: 0, subagentTurns: 0, perDay: { tokens: 0, cost: 0 as number | null } };
   const byDay = new Map<string, { tokens: number; cost: number | null; byModel: Record<string, number> }>();

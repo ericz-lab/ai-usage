@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { costOf, priceFor } from "./pricing.ts";
+import { costOf as estimate, priceFor as price } from "./pricing.ts";
+import { testCatalog } from "./testing-pricing.ts";
+const costOf = (model: string, u: Parameters<typeof estimate>[1]) => estimate(model, u, testCatalog);
+const priceFor = (model: string) => price(model, testCatalog);
 
 test("Codex API equivalents price each token category and preserve unknown models", () => {
   expect(costOf("gpt-6-astra", { input: 1000, cacheRead: 2000, cacheWrite: 400, output: 500 })).toBeCloseTo(0.042);
