@@ -8,6 +8,9 @@
 #                             service reads the checkout's .env itself (Bun loads it), so a
 #                             laptop outside a space puts BLOB_URL, S3_* and USAGE_MACHINE there
 #   neither                   prints how to start by hand
+#   SPACE_SUPERVISOR=space    dependencies only: ai-space writes and runs space-ai-usage.service
+#                             (ai-space docs/supervision.md); read from the environment, which
+#                             install-defaults sets, or else from the workspace .env
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 APP=ai-usage
@@ -20,6 +23,7 @@ cd "$HERE"
 "$BUN" install --production --frozen-lockfile 2>&1 | tail -1
 mkdir -p data
 
+SUPERVISOR="${SPACE_SUPERVISOR:-$(grep -E '^SPACE_SUPERVISOR=' "${SPACE_HOME:-$HOME/.ai-space}/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'" || true)}"
 wait_healthy() {
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     sleep 1
@@ -30,6 +34,22 @@ wait_healthy() {
   done
   return 1
 }
+
+# Under the space's supervision the unit is the space's: writing ai-usage.service here would run a
+# second copy on the same port. Restart the space's unit, if there is one yet, for the new code.
+if [ "$SUPERVISOR" = "space" ]; then
+  if systemctl --user is-enabled ai-usage.service >/dev/null 2>&1; then
+    echo "$APP: ai-usage.service is still enabled; the space will not take the app over until it is disabled (systemctl --user disable --now ai-usage.service)"
+  fi
+  if systemctl --user cat space-$APP.service >/dev/null 2>&1; then
+    systemctl --user restart space-$APP.service
+    wait_healthy && exit 0
+    echo "$APP is not answering on 127.0.0.1:$PORT_; see: journalctl --user -u space-$APP -n 50" >&2
+    exit 1
+  fi
+  echo "$APP: dependencies installed; ai-space starts it on the next sync (SPACE_SUPERVISOR=space)"
+  exit 0
+fi
 
 if [ "$(uname -s)" = "Darwin" ]; then
   mkdir -p ~/Library/LaunchAgents

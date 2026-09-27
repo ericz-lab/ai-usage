@@ -24,6 +24,8 @@ service:
   command: bun src/index.ts
   port: 8880
   health: /healthz
+  env:
+    NODE_ENV: production
 
 # Panel card: today, the last seven days, the top model.
 widgets:
