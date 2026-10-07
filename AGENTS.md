@@ -73,6 +73,7 @@ bun src/index.ts                  # serve on 127.0.0.1:8880
 bun src/index.ts scan|today|stats [range]
 bun run check                     # typecheck + tests
 bash deploy/install.sh            # install the user unit on a server
+space app deploy ai-usage --rev origin/main   # on a host whose checkout is a clone, after git fetch
 ```
 
 ## Environment
