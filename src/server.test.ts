@@ -8,7 +8,7 @@ import { Store } from "./store.ts";
 
 const H = 3_600_000;
 const NOW = Date.parse("2026-09-19T10:00:00Z");
-const config: Config = { port: 0, role: "dashboard", dbPath: ":memory:", sources: ["/nowhere"], scanIntervalMs: 60_000 };
+const config: Config = { port: 0, role: "dashboard", dbPath: ":memory:", sources: ["/nowhere"], scanIntervalMs: 60_000, limits: ["claude", "codex"] };
 const scanResult: ScanResult = { sources: [], files: 0, newFiles: 0, updatedFiles: 0, turns: 0, sessions: 0, dispatches: 0, ms: 1 };
 
 function seed(store: Store, machineTurns = 0): void {

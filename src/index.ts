@@ -23,7 +23,8 @@ import { Store } from "./store.ts";
  *
  * The machine's name on the dashboard (and in the shared store) is USAGE_MACHINE, else SPACE_NAME, else the hostname.
  * USAGE_ROLE=collector makes this instance scan and publish only: no page, no pulls (config.ts).
- * Plan usage limits are read with the CLI's own login when this machine has one (limits.ts), every five minutes.
+ * Plan usage limits are read with the CLI's own login when this machine has one (limits.ts), every five minutes;
+ * USAGE_LIMITS picks the providers (claude,codex by default; none turns both off).
  */
 
 const log = (line: string) => console.log(`[ai-usage] ${line}`);
@@ -98,18 +99,20 @@ async function main(): Promise<void> {
 
   if (command !== "serve") throw new Error(`unknown command: ${command} (expected serve, scan, today or stats)`);
 
-  const limits = new Limits({ machine, log, publishOnly: config.role === "collector", ...(objects ? { objects: objects.objects, others: () => shared!.shared.machines().map((m) => m.name) } : {}) });
-  const codexLimits = new Limits({ provider: "codex", machine, log, publishOnly: config.role === "collector", ...(objects ? { objects: objects.objects, others: () => shared!.shared.machines().map((m) => m.name) } : {}) });
-  const app = createApp({ pricing, store, config, machine, page: index, scan, peers, limits, codexLimits, log, ...(shared ? { shared } : {}) });
+  const limitsFor = (provider: "claude" | "codex") =>
+    config.limits.includes(provider) ? new Limits({ provider, machine, log, publishOnly: config.role === "collector", ...(objects ? { objects: objects.objects, others: () => shared!.shared.machines().map((m) => m.name) } : {}) }) : undefined;
+  const limits = limitsFor("claude");
+  const codexLimits = limitsFor("codex");
+  const app = createApp({ pricing, store, config, machine, page: index, scan, peers, ...(limits ? { limits } : {}), ...(codexLimits ? { codexLimits } : {}), log, ...(shared ? { shared } : {}) });
   const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, routes: app.routes as never, development: !!process.env.SPACE_DEV });
   log(`listening on http://127.0.0.1:${server.port} · ${machine} (${config.role}) · cache ${config.dbPath} · sources ${config.sources.join(", ")}${shared ? ` · shared store ${shared.url} every ${syncInterval} s` : peers.enabled ? " · peers on" : ""}`);
   const tick = () => app.refresh(false).catch((e) => log(`refresh failed: ${(e as Error).message}`));
   tick();
   const timer = setInterval(tick, config.scanIntervalMs);
   // The limits keep their own clock (five minutes between fetches); this only asks whether one is due.
-  limits.tick();
-  codexLimits.tick();
-  const limitsTimer = setInterval(() => { limits.tick(); codexLimits.tick(); }, 60_000);
+  limits?.tick();
+  codexLimits?.tick();
+  const limitsTimer = setInterval(() => { limits?.tick(); codexLimits?.tick(); }, 60_000);
 
   const stop = () => {
     clearInterval(timer);

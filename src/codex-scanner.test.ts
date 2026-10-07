@@ -121,3 +121,10 @@ test("older cache schema upgrades without losing Claude rows, and peer exports r
     expect(mixed.models).toHaveLength(2);
   } finally { store.close(); peer.close(); }
 });
+
+test("USAGE_LIMITS picks the providers whose plan limits are polled", () => {
+  expect(loadConfig({}, "/home/test").limits).toEqual(["claude", "codex"]);
+  expect(loadConfig({ USAGE_LIMITS: " Codex " }, "/home/test").limits).toEqual(["codex"]);
+  expect(loadConfig({ USAGE_LIMITS: "none" }, "/home/test").limits).toEqual([]);
+  expect(() => loadConfig({ USAGE_LIMITS: "gemini" }, "/home/test")).toThrow("USAGE_LIMITS");
+});

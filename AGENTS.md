@@ -89,6 +89,7 @@ bash deploy/install.sh            # install the user unit on a server
 | `USAGE_SCAN_INTERVAL` | seconds between scans | 300 |
 | `USAGE_ROLE` | `dashboard` (everything) or `collector` (scan and publish only; no page, no pulls) | dashboard |
 | `USAGE_SYNC_INTERVAL` | seconds between shared-store syncs | 1800 |
+| `USAGE_LIMITS` | providers whose plan limits are polled: `claude`, `codex`, comma-separated, or `none` | claude,codex |
 | `USAGE_MACHINE` | this machine's name on the dashboard and in the shared store | `SPACE_NAME`, else the hostname |
 | `BLOB_URL`, `S3_*` | the shared store (ai-space sets them from `storage.blobs`) | none = local only |
 | `USAGE_PEERS` | `name=url,...` of ai-usage instances reachable directly | none |

@@ -22,7 +22,11 @@ export type Config = {
   sources: string[];
   /** Milliseconds between background scans. */
   scanIntervalMs: number;
+  /** Providers whose plan limits are read from their usage endpoint. */
+  limits: LimitsProvider[];
 };
+
+export type LimitsProvider = "claude" | "codex";
 
 export const DEFAULT_PORT = 8880;
 
@@ -59,6 +63,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (role !== "dashboard" && role !== "collector") throw new Error(`USAGE_ROLE must be dashboard or collector, got ${env.USAGE_ROLE}`);
   const interval = Number(env.USAGE_SCAN_INTERVAL ?? 300);
   if (!Number.isFinite(interval) || interval < 10) throw new Error(`USAGE_SCAN_INTERVAL must be at least 10 seconds, got ${env.USAGE_SCAN_INTERVAL}`);
+  const limitsText = (env.USAGE_LIMITS ?? "claude,codex").trim().toLowerCase();
+  const limits = limitsText === "none" ? [] : limitsText.split(",").map((s) => s.trim()).filter(Boolean);
+  for (const l of limits) if (l !== "claude" && l !== "codex") throw new Error(`USAGE_LIMITS must list claude and/or codex, or be none, got ${env.USAGE_LIMITS}`);
   const spaceHome = resolve(expandHome(env.SPACE_HOME?.trim() || (env.SPACE_APP_DATA_DIR ? dirname(dirname(env.SPACE_APP_DATA_DIR)) : join(home, ".ai-space")), home));
   const ledgerPath = env.USAGE_SPACE_DB?.trim() || env.SPACE_DB?.trim() || join(spaceHome, "data", "space.db");
   return {
@@ -72,5 +79,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dbPath: dbPathFrom(env),
     sources: sources.length ? sources : defaultSources(home, env),
     scanIntervalMs: interval * 1000,
+    limits: limits as LimitsProvider[],
   };
 }

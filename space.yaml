@@ -26,6 +26,8 @@ service:
   health: /healthz
   env:
     NODE_ENV: production
+    # Claude plan limits are off for now; Codex limits still poll chatgpt.com.
+    USAGE_LIMITS: codex
 
 # Panel card: today, the last seven days, the top model.
 widgets:
