@@ -59,7 +59,7 @@ icon.svg               panel icon, 64x64 viewBox
 ## Conventions
 
 - Tests sit next to the code (`src/*.test.ts`), use `:memory:` databases, temporary directories and a scripted `fetch`; no network, no real transcripts.
-- Widget contract: `GET /api/widget` -> `{ ok: true, items: [{ text, url, time }] }`.
+- Widget contract: `GET /api/widget` -> `{ ok: true, items: [{ text, url, time }], asOf, staleAfter, blocks }`. `items` stays for older panels; `blocks` (ai-space docs/app-spec.md, "Blocks") is built by `widgetBlocks()` from the same summaries: today's cost (delta vs the 7 full days before today, only when history reaches back that far), 7-day cost bars (a day without turns or with an unpriced model is null), Codex weekly percent used, today's tokens and sessions, top model.
 - Shared-store contract: a machine's directory is its name; `manifest.json` lists `files: { path: { hash, rows } }`; hashes are `Bun.hash` of the file text. A reader skips a file whose hash it already imported. Only this machine's own rows are published, never rows pulled from others.
 - Export contract: `GET /api/export?since=<ms>` -> `{ ok, machine, sessions, turns, agents }` with the store's row shapes; only rows scanned here (`machine = ''`), never rows pulled from elsewhere, so a chain of hubs cannot double count.
 - Series colours: a model's slot is its index in the all-time model list (`summary.models`), not in the filtered one, so filtering never repaints. Past eight slots everything folds into "other".

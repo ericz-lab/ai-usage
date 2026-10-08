@@ -1,11 +1,11 @@
 import type { SpacePricing } from "./space-pricing.ts";
 import type { Config } from "./config.ts";
-import type { Limit, Limits } from "./limits.ts";
+import type { Limit, Limits, LimitsSnapshot } from "./limits.ts";
 import type { Peers } from "./peers.ts";
-import { PRICING_AS_OF } from "./pricing.ts";
+import { PRICING_AS_OF, shortModel } from "./pricing.ts";
 import type { ScanResult } from "./scanner.ts";
 import type { Shared } from "./shared.ts";
-import { RANGES, type Range, summary, validTz } from "./stats.ts";
+import { RANGES, type Range, type Summary, startOfDay, summary, validTz } from "./stats.ts";
 import type { Store } from "./store.ts";
 
 /**
@@ -21,7 +21,7 @@ import type { Store } from "./store.ts";
  *   POST /api/refresh            scan now, sync the shared store (or pull every peer), re-read the plan limits; returns what changed
  *   GET  /api/export?since=<ms>  this machine's own rows from `since` on, for a hub that pulls them
  *   GET  /api/limits             plan usage limits (session, weekly): the newest snapshot per account, this machine's and the shared store's
- *   GET  /api/widget             ai-space panel card: today, last 7 days, top model, plan limits
+ *   GET  /api/widget             ai-space panel card: items (today, last 7 days, top model, plan limits) and state blocks
  *
  * Reads trust loopback; there is no token (the edge holds the login, and a
  * peer's export is reached through the space's authenticated peer channel).
@@ -61,6 +61,99 @@ const fmtTokens = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1
 const fmtCost = (c: number | null) => (c === null ? "n/a" : c >= 100 ? `$${c.toFixed(0)}` : c >= 1 ? `$${c.toFixed(2)}` : `$${c.toFixed(3)}`);
 const limitName = (l: Limit) => (l.label ? `${l.group === "session" ? "session" : "week"} ${l.label}` : l.group === "session" ? "session" : "week");
 const list = (v: string | null) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+/** Text in the panel's languages (ai-space docs/app-spec.md, "Blocks"). */
+type Text = { en: string; zh: string };
+export type Block = { type: "metric" | "trend" | "progress" | "gauge" | "status"; label: Text; caption?: Text; url?: string; tone?: "positive" | "negative" | "warning" | "neutral"; [field: string]: unknown };
+
+/** How long the card stays current: the panel refreshes every 5 minutes and a read rescans when the last scan is a minute old. */
+export const WIDGET_STALE_AFTER = 1800;
+
+/** Hundredths of a cent: a light day still shows its cost. */
+const cents = (c: number) => Math.round(c * 10_000) / 10_000;
+const WEEKDAYS_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+function resetText(at: number, now: number, tz: string): Text {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(at).map((p) => [p.type, p.value]));
+  const hm = `${parts.hour}:${parts.minute}`;
+  const day = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(at);
+  const zhDay = WEEKDAYS_ZH[["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(day)] ?? day;
+  if (at - now < 86_400_000) {
+    const h = Math.max(1, Math.round((at - now) / 3_600_000));
+    return { en: `resets in ${h}h`, zh: `${h} 小时后重置` };
+  }
+  return { en: `resets ${day} ${hm}`, zh: `${zhDay} ${hm} 重置` };
+}
+
+/** The Codex weekly window of the newest Codex snapshot: the unlabelled weekly limit, else null. */
+function codexWeek(plans: LimitsSnapshot[]): { percent: number; resetsAt: number | null; fetchedAt: number } | null {
+  const newest = plans.filter((p) => p.provider === "codex").sort((a, b) => b.fetchedAt - a.fetchedAt)[0];
+  const week = newest?.limits.find((l) => l.group === "weekly" && l.label === null);
+  return newest && week ? { percent: week.percent, resetsAt: week.resetsAt, fetchedAt: newest.fetchedAt } : null;
+}
+
+/**
+ * The panel's state card, from the same summaries the items use. Missing values
+ * are null: an unpriced model makes a cost null, a day without recorded turns
+ * is a null point, and the Codex block is null when no reading covers now.
+ */
+export function widgetBlocks(input: { today: Summary; week: Summary; prior: Summary | null; plans: LimitsSnapshot[]; codexPolled: boolean; machines: number; now: number; tz: string }): Block[] {
+  const { today, week, prior, plans, now, tz } = input;
+  const cost = today.totals.cost;
+  const scope: Text = input.machines > 1 ? { en: `today · all ${input.machines} machines`, zh: `今日 · 全部 ${input.machines} 台机器` } : { en: "today", zh: "今日" };
+  const avg = prior?.totals.perDay.cost ?? null;
+  const hero: Block = {
+    type: "metric",
+    label: { en: "Today", zh: "今日费用" },
+    value: cost === null ? null : cents(cost),
+    format: "currency",
+    currency: "USD",
+    caption: cost === null ? { en: `${scope.en} · a model has no price`, zh: `${scope.zh} · 有模型无价格` } : scope,
+    url: "/?range=today",
+  };
+  if (cost !== null && avg !== null && avg > 0)
+    hero.delta = { value: Math.round(((cost - avg) / avg) * 1000) / 10, format: "percent", label: { en: "vs 7-day avg", zh: "较 7 日均值" } };
+  const blocks: Block[] = [
+    hero,
+    {
+      type: "trend",
+      label: { en: "Last 7 days", zh: "近 7 天" },
+      style: "bar",
+      format: "currency",
+      currency: "USD",
+      points: week.daily.map((d) => ({ t: d.day, v: Object.keys(d.byModel).length === 0 || d.cost === null ? null : cents(d.cost) })),
+      url: "/?range=7d",
+    },
+  ];
+  const codex = codexWeek(plans);
+  if (codex) {
+    const reset = codex.resetsAt !== null && codex.resetsAt <= now;
+    const used = reset ? null : Math.round(codex.percent);
+    const left = used === null ? null : 100 - used;
+    const when = codex.resetsAt !== null && !reset ? resetText(codex.resetsAt, now, tz) : null;
+    blocks.push({
+      type: "progress",
+      label: { en: "Codex week used", zh: "Codex 周额度已用" },
+      value: used,
+      max: 100,
+      format: "percent",
+      caption:
+        used === null
+          ? { en: "window reset since the last reading", zh: "上次读取后已重置" }
+          : { en: [`${used}% used`, `${left}% left`, when?.en].filter(Boolean).join(" · "), zh: [`已用 ${used}%`, `剩余 ${left}%`, when?.zh].filter(Boolean).join(" · ") },
+      tone: used === null ? "neutral" : used > 95 ? "negative" : used > 80 ? "warning" : "neutral",
+      url: "/",
+    });
+  } else if (input.codexPolled) {
+    blocks.push({ type: "progress", label: { en: "Codex week used", zh: "Codex 周额度已用" }, value: null, max: 100, format: "percent", caption: { en: "quota unknown: no Codex reading", zh: "额度未知：没有 Codex 读数" }, url: "/" });
+  }
+  blocks.push(
+    { type: "metric", label: { en: "Tokens today", zh: "今日 Token" }, value: today.totals.tokens, format: "compact", url: "/?range=today" },
+    { type: "metric", label: { en: "Sessions today", zh: "今日会话" }, value: today.totals.sessions, format: "number", url: "/?range=today" },
+  );
+  const top = week.byModel[0];
+  if (top) blocks.push({ type: "status", label: { en: "Top model · 7 days", zh: "主力模型 · 7 天" }, value: shortModel(top.model), caption: { en: `${fmtTokens(top.tokens)} tokens`, zh: `${fmtTokens(top.tokens)} Token` }, tone: "neutral", url: "/?range=7d" });
+  return blocks.slice(0, 6);
+}
 
 export function createApp(opts: ServerOptions) {
   const { store, config, machine } = opts;
@@ -175,8 +268,16 @@ export function createApp(opts: ServerOptions) {
           const plans = await snapshots();
           const at = new Date(now()).toISOString();
           const machines = week.byMachine.length > 1 ? ` · ${week.byMachine.length} machines` : "";
+          // The 7 full days before today, for the hero's delta; only when the history reaches the first of them.
+          const priorEnd = startOfDay(now(), tz) - 1;
+          const first = store.counts().firstTs;
+          const prior = summary(store, { pricing: opts.pricing?.catalog, range: "7d", tz, now: priorEnd, sessionLimit: 1 });
+          const blocks = widgetBlocks({ today, week, prior: first !== null && first < prior.from + 86_400_000 ? prior : null, plans, codexPolled: opts.codexLimits !== undefined, machines: today.machines.length, now: now(), tz });
           return json({
             ok: true,
+            asOf: new Date(lastScanAt() || now()).toISOString(),
+            staleAfter: WIDGET_STALE_AFTER,
+            blocks,
             items: [
               { text: `Today · ${fmtTokens(today.totals.tokens)} tokens · ${fmtCost(today.totals.cost)} · ${today.totals.sessions} sessions`, url: "/?range=today", time: at },
               { text: `7 days · ${fmtTokens(week.totals.tokens)} tokens · ${fmtCost(week.totals.cost)} · ${fmtCost(week.totals.perDay.cost)} per day${machines}`, url: "/?range=7d", time: at },

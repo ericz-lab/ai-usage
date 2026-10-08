@@ -107,6 +107,21 @@ describe("routes", () => {
     expect(items[0]?.text).toMatch(/^Today · 1\.1K tokens · \$0\.005 · 2 sessions$/);
     expect(items[1]?.text).toContain("2 machines");
     expect(items[2]?.text).toMatch(/^Top model · claude-sonnet-5/);
+    expect(body.asOf).toBe(new Date(clock).toISOString());
+    expect(body.staleAfter).toBe(1800);
+    const blocks = body.blocks as Record<string, unknown>[];
+    // No Codex limits configured: no quota block.
+    expect(blocks.map((b) => b.type)).toEqual(["metric", "trend", "metric", "metric", "status"]);
+    expect(blocks[0]).toMatchObject({ label: { en: "Today" }, format: "currency", currency: "USD", caption: { en: "today · all 2 machines" } });
+    expect(blocks[0]?.value).toBeCloseTo(0.0045, 4);
+    // History starts today: no 7-day baseline, so no delta.
+    expect(blocks[0]?.delta).toBeUndefined();
+    const points = blocks[1]?.points as { t: string; v: number | null }[];
+    expect(points.map((p) => p.t)).toEqual(["2026-09-13", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19"]);
+    expect(points.slice(0, 6).every((p) => p.v === null)).toBe(true);
+    expect(blocks[2]).toMatchObject({ format: "compact", value: 1104 });
+    expect(blocks[3]).toMatchObject({ label: { en: "Sessions today" }, value: 2 });
+    expect(blocks[4]).toMatchObject({ type: "status", value: "sonnet 5" });
   });
 });
 
@@ -274,4 +289,55 @@ test("summary and widget use refreshed ai-space prices, including after an outag
     const status = await (await fetch(`${base}/api/status`)).json() as { gptPricing: { status: string } };
     expect(status.gptPricing.status).toBe("cached");
   } finally { server.stop(true); store.close(); }
+});
+
+describe("widget blocks", () => {
+  const DAY = 86_400_000;
+  const turn = (id: string, ts: number, model = "claude-sonnet-5") => ({ machine: "", session_id: `s-${id}`, ts, model, input: 1_000_000, output: 0, cache_read: 0, cache_write: 0, tool: null, message_id: id, subagent: 0, agent_id: null });
+  const codexBody = (window: Record<string, unknown>) => ({ rate_limit: { secondary_window: { limit_window_seconds: 604800, ...window } } });
+  async function widget(turns: ReturnType<typeof turn>[], codex?: unknown) {
+    const { Limits } = await import("./limits.ts");
+    const store = new Store(":memory:");
+    store.import("peer", { sessions: [], agents: [], turns });
+    const codexLimits = codex === undefined ? undefined : new Limits({ machine: "local", provider: "codex", now: () => NOW, credentials: async () => ({ token: "t", account: "a", expiresAt: null, plan: null, tier: null }), fetch: (async () => Response.json(codex)) as unknown as typeof fetch });
+    const app = createApp({ store, config, machine: "local", codexLimits, now: () => NOW, log: () => {}, scan: async () => scanResult });
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, routes: app.routes as never });
+    try {
+      await fetch(`http://127.0.0.1:${server.port}/api/refresh`, { method: "POST" });
+      return (await (await fetch(`http://127.0.0.1:${server.port}/api/widget?tz=UTC`)).json()) as { ok: boolean; items: unknown[]; blocks: Record<string, any>[] };
+    } finally { server.stop(true); store.close(); }
+  }
+  const midnight = Date.parse("2026-09-19T00:00:00Z");
+
+  test("hero delta against the 7 full days before today, quiet days null in the trend, Codex week as used percent", async () => {
+    // $3 a day for the 7 days before today except 3 days ago; $3 so far today.
+    const turns = [turn("today", NOW - H), ...[1, 2, 4, 5, 6, 7].map((d) => turn(`d${d}`, midnight - d * DAY + H))];
+    const body = await widget(turns, codexBody({ used_percent: 85.4, reset_at: (NOW + 3 * DAY) / 1000 }));
+    expect(body.ok).toBe(true);
+    expect(body.items.length).toBeGreaterThan(0);
+    expect(body.blocks.map((b) => b.type)).toEqual(["metric", "trend", "progress", "metric", "metric", "status"]);
+    const [hero, trend, quota] = body.blocks;
+    expect(hero!.value).toBe(3);
+    // avg = 18 / 7 = 2.571 -> +16.7%
+    expect(hero!.delta).toEqual({ value: 16.7, format: "percent", label: { en: "vs 7-day avg", zh: "较 7 日均值" } });
+    expect(trend!.points.map((p: { v: number | null }) => p.v)).toEqual([3, 3, 3, null, 3, 3, 3]);
+    expect(quota).toMatchObject({ value: 85, max: 100, format: "percent", tone: "warning", caption: { en: "85% used · 15% left · resets Tue 10:00", zh: "已用 85% · 剩余 15% · 周二 10:00 重置" } });
+  });
+
+  test("unpriced cost and unknown or reset Codex quota are null, not zero", async () => {
+    const unpriced = await widget([turn("q", NOW - H, "qwen-local")], { rate_limit: { primary_window: { used_percent: 25, limit_window_seconds: 18000 } } });
+    const [hero, trend, quota] = unpriced.blocks;
+    expect(hero!.value).toBeNull();
+    expect(hero!.delta).toBeUndefined();
+    expect(hero!.caption.en).toContain("no price");
+    expect(trend!.points.at(-1)).toEqual({ t: "2026-09-19", v: null });
+    expect(quota).toMatchObject({ type: "progress", value: null, caption: { en: "quota unknown: no Codex reading" } });
+    expect(unpriced.blocks[3]).toMatchObject({ value: 1_000_000, format: "compact" });
+
+    const reset = await widget([turn("t", NOW - H)], codexBody({ used_percent: 99, reset_at: (NOW - H) / 1000 }));
+    expect(reset.blocks[2]).toMatchObject({ type: "progress", value: null, tone: "neutral" });
+
+    const full = await widget([turn("t", NOW - H)], codexBody({ used_percent: 97, reset_at: (NOW + 5 * H) / 1000 }));
+    expect(full.blocks[2]).toMatchObject({ value: 97, tone: "negative", caption: { en: "97% used · 3% left · resets in 5h" } });
+  });
 });
