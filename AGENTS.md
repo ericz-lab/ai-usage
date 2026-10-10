@@ -104,3 +104,7 @@ space app deploy ai-usage --rev origin/main   # on a host whose checkout is a cl
 - Two machines with the same `USAGE_MACHINE` overwrite each other's directory in the shared store; names must be unique. Renaming a machine leaves its old directory behind (delete it by hand), and readers relabel the rows on the next pull because turns are keyed by message id.
 - The usage endpoint is undocumented and rate limited (429 when polled hard); keep the five-minute interval. Its `limits` array is what the page shows; older answers without it fall back to `five_hour` / `seven_day` / `seven_day_<model>`.
 - `SPACE_APP_URL_AI_USAGE` is read by ai-space, not by this service: the tile's link changes, the service does not care.
+
+## Usage measurement
+
+App pages load `/_space/usage.js` at runtime through the Space router. It records visible, recently active time without page content or credentials. Refresh existing tabs after deployment; earlier unmeasured time cannot be recovered. Direct-port access has no Space heartbeat endpoint. `usage.test.ts` checks every application page loader; run it with `bun test usage.test.ts`.
