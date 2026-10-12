@@ -32,7 +32,7 @@ service:
 # Panel card: today, the last seven days, the top model.
 widgets:
   - name: usage
-    title: AI Usage
+    title: AI Usage · Summary
     kind: items
     source: /api/widget
     link: /
