@@ -28,6 +28,8 @@ export type PeerOptions = {
   store: Store;
   /** `SPACE_API_URL`, when ai-space runs this service. */
   spaceApiUrl?: string;
+  /** `SPACE_APP_TOKEN`: sent to `spaceApiUrl` only, which refuses an app's reads without it under `SPACE_AUTH=builtin`. */
+  spaceToken?: string;
   /** `USAGE_PEERS`, parsed. */
   direct?: PeerSource[];
   fetch?: typeof fetch;
@@ -69,6 +71,13 @@ export class Peers {
     this.log = opts.log ?? (() => {});
   }
 
+  /** A GET with the app's token when the URL is the space's own API; a direct peer never sees it. */
+  private get(url: string): Promise<Response> {
+    const base = this.opts.spaceApiUrl?.replace(/\/+$/, "");
+    const own = !!base && !!this.opts.spaceToken && url.startsWith(`${base}/`);
+    return this.fetchFn(url, { signal: AbortSignal.timeout(this.timeoutMs), ...(own ? { headers: { authorization: `Bearer ${this.opts.spaceToken}` } } : {}) });
+  }
+
   get enabled(): boolean {
     return !!this.opts.spaceApiUrl || (this.opts.direct?.length ?? 0) > 0;
   }
@@ -78,7 +87,7 @@ export class Peers {
     const found: PeerSource[] = [...(this.opts.direct ?? [])];
     const base = this.opts.spaceApiUrl?.replace(/\/+$/, "");
     if (base) {
-      const r = await this.fetchFn(`${base}/api/apps?all=1`, { signal: AbortSignal.timeout(this.timeoutMs) });
+      const r = await this.get(`${base}/api/apps?all=1`);
       if (!r.ok) throw new Error(`space answered ${r.status} to /api/apps`);
       const j = (await r.json()) as { apps?: { name?: string; peer?: string }[] };
       for (const a of j.apps ?? [])
@@ -121,7 +130,7 @@ export class Peers {
 
   private async pull(p: PeerSource): Promise<number> {
     const since = Math.max(0, this.store.latestTurn(p.name) - OVERLAP_MS);
-    const r = await this.fetchFn(`${p.url}/api/export?since=${since}`, { signal: AbortSignal.timeout(this.timeoutMs) });
+    const r = await this.get(`${p.url}/api/export?since=${since}`);
     if (!r.ok) throw new Error(`${p.url} answered ${r.status}`);
     const j = (await r.json()) as Partial<Export> & { ok?: boolean; error?: string };
     if (j.ok !== true) throw new Error(j.error || "not an export");

@@ -37,7 +37,7 @@ async function main(): Promise<void> {
   const store = new Store(config.dbPath);
   const pricing = new SpacePricing({ store, url: process.env.SPACE_API_URL });
   await pricing.refresh();
-  const peers = new Peers({ store, spaceApiUrl: process.env.SPACE_API_URL?.trim() || undefined, direct: parsePeerList(process.env.USAGE_PEERS), log });
+  const peers = new Peers({ store, spaceApiUrl: process.env.SPACE_API_URL?.trim() || undefined, spaceToken: process.env.SPACE_APP_TOKEN?.trim() || undefined, direct: parsePeerList(process.env.USAGE_PEERS), log });
   const objects = objectStoreFromEnv(process.env);
   const syncInterval = Number(process.env.USAGE_SYNC_INTERVAL ?? 1800);
   if (!Number.isFinite(syncInterval) || syncInterval < 60) throw new Error(`USAGE_SYNC_INTERVAL must be at least 60 seconds, got ${process.env.USAGE_SYNC_INTERVAL}`);

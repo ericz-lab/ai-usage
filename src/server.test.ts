@@ -170,6 +170,20 @@ describe("peers", () => {
     expect(() => parsePeerList("bad name=http://x")).toThrow(/name/);
   });
 
+  test("the app token goes to the space's API, never to a direct peer", async () => {
+    const seen: [string, string | null][] = [];
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      seen.push([String(input), new Headers(init?.headers).get("authorization")]);
+      if (String(input).endsWith("/api/apps?all=1")) return Response.json({ apps: [{ name: "ai-usage", peer: "david" }] });
+      return Response.json({ ok: true, sessions: [], turns: [], agents: [] });
+    }) as unknown as typeof fetch;
+    const peers = new Peers({ store: new Store(":memory:"), spaceApiUrl: "http://127.0.0.1:8700/", spaceToken: "app-t", direct: [{ name: "lan", url: "http://direct" }], fetch: fetchFn, now: () => NOW });
+    await peers.pullAll();
+    expect(seen.find(([u]) => u.endsWith("/api/apps?all=1"))?.[1]).toBe("Bearer app-t");
+    expect(seen.find(([u]) => u.includes("/peers/david/"))?.[1]).toBe("Bearer app-t");
+    expect(seen.find(([u]) => u.startsWith("http://direct/"))?.[1]).toBeNull();
+  });
+
   test("discovers ai-usage on the space's peers, pulls since the newest turn held, records failures", async () => {
     const store = new Store(":memory:");
     const calls: string[] = [];
