@@ -14,6 +14,8 @@ export type Role = "dashboard" | "collector";
 
 export type Config = {
   ledger?: LedgerConfig;
+  /** DeepSeek Harness session logs (`$DSH_HOME/sessions`); absent when `USAGE_DEEPSEEK=none`. */
+  deepseek?: { dir: string };
   port: number;
   role: Role;
   /** SQLite file holding the scanned turns; a cache that can be deleted and rebuilt. */
@@ -68,12 +70,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   for (const l of limits) if (l !== "claude" && l !== "codex") throw new Error(`USAGE_LIMITS must list claude and/or codex, or be none, got ${env.USAGE_LIMITS}`);
   const spaceHome = resolve(expandHome(env.SPACE_HOME?.trim() || (env.SPACE_APP_DATA_DIR ? dirname(dirname(env.SPACE_APP_DATA_DIR)) : join(home, ".ai-space")), home));
   const ledgerPath = env.USAGE_SPACE_DB?.trim() || env.SPACE_DB?.trim() || join(spaceHome, "data", "space.db");
+  const deepseekOff = (env.USAGE_DEEPSEEK ?? "").trim().toLowerCase() === "none";
+  const dshHome = resolve(expandHome(env.DSH_HOME?.trim() || join(home, ".dsh"), home));
   return {
     ledger: {
       dbPath: ledgerPath === "none" ? null : resolve(expandHome(ledgerPath, home)),
       runtimesPath: join(spaceHome, "runtimes.yaml"),
       ...(env.USAGE_CODEX_RUNTIMES !== undefined ? { runtimeNames: env.USAGE_CODEX_RUNTIMES.split(",").map((s) => s.trim()).filter(Boolean) } : {}),
     },
+    ...(deepseekOff ? {} : { deepseek: { dir: join(dshHome, "sessions") } }),
     port,
     role,
     dbPath: dbPathFrom(env),

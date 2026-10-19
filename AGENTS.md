@@ -4,9 +4,9 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 
 ## Rules
 
-1. **Transcripts and the Space model ledger are the truth; usage.db is a cache.** Everything can be rebuilt by scanning those sources again. Never write to transcript directories or to the Space ledger.
+1. **Transcripts, session logs and the Space model ledger are the truth; usage.db is a cache.** Everything can be rebuilt by scanning those sources again. Never write to transcript directories, DeepSeek Harness session logs or the Space ledger.
 2. **Count once.** One API response is logged several times while it streams, all with the same `message.id`; the last record wins (`turns` is unique by message id and upserts). Rows pulled from peers keep their ids, so a row has one identity across machines.
-3. **Estimate, do not invent.** A model without a listed price shows n/a, never zero; a group with one unpriced member has a null cost. Claude prices carry their date (`PRICING_AS_OF`); GPT rates and their date come only from ai-space (`/api/model/pricing`), cached in usage.db.
+3. **Estimate, do not invent.** A model without a listed price shows n/a, never zero; a group with one unpriced member has a null cost. Anthropic and DeepSeek prices carry their date (`PRICING_AS_OF`); GPT rates and their date come only from ai-space (`/api/model/pricing`), cached in usage.db.
 4. **The viewer's day.** Days and hours are computed in the time zone the page sends (`tz`); "today" is the viewer's today. The math lives in `src/stats.ts` only.
 5. **Loopback only, no token.** The service binds `127.0.0.1:${PORT}`; exposure and login are the space's job. A peer's export is reached through the space's authenticated peer channel, never by exposing this port.
 6. **Configuration is environment.** `.env.example` lists every variable; real values live in `.env` (ignored) or in the `space.env` ai-space writes.
@@ -14,11 +14,12 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 ## Stack and runtime model
 
 - Bun + TypeScript, React 19 for the page, no other dependency. `src/index.ts` is the entry point (`Bun.serve` with the HTML import of `web/index.html`, `bun:sqlite`).
-- A scan runs on boot, every `USAGE_SCAN_INTERVAL` seconds, on `POST /api/refresh`, and before any read when the last scan is older than a minute. It is incremental: each file is tracked by size, mtime and the byte offset consumed, and only appended bytes are read (a partial last line waits until the file has been quiet for ten seconds). A full first scan of a year of transcripts takes well under a second per hundred megabytes.
+- A scan runs on boot, every `USAGE_SCAN_INTERVAL` seconds, on `POST /api/refresh`, and before any read when the last scan is older than a minute. Claude/Codex transcripts are incremental: each file is tracked by size, mtime and the byte offset consumed, and only appended bytes are read (a partial last line waits until the file has been quiet for ten seconds). A full first scan of a year of transcripts takes well under a second per hundred megabytes. DeepSeek Harness logs are compressed frames, so a changed log is parsed whole and upserted by message id (`deepseek-scanner.ts`).
 - The shared store (`src/shared.ts`) is on when `BLOB_URL` is an s3 prefix: after a scan, publish this machine's rows (`<machine>/turns/<utc day>.jsonl`, `sessions.jsonl`, `agents.jsonl`, `manifest.json` with content hashes) and pull every other machine's changed files, at most every `USAGE_SYNC_INTERVAL` seconds unless the Refresh button forces it. State lives in `meta` (`shared:published`, `shared:seen:<machine>`, `shared:machine:<machine>`, `shared:last`).
 - Plan limits (`src/limits.ts`): every five minutes, with the CLI's OAuth login (`~/.claude/.credentials.json`, or the macOS keychain item `Claude Code-credentials`), `GET https://api.anthropic.com/api/oauth/usage`; the token is read, never refreshed (a refresh would rotate the CLI's refresh token). The snapshot is kept in memory and, with a shared store, put at `<machine>/limits.json` outside the manifest; the dashboard reads each known machine's file (cached 60 s) and keeps the newest per account (`accountUuid` from `~/.claude.json`).
 - Space ledger (`src/space-ledger.ts`): read the local `space.db` in readonly mode. Import only `origin=run` calls from runtime names whose configured kind is `codex-cli`; these completions use `--ephemeral`. The insert-id cursor and source anchor are checkpointed atomically with normalized rows. Late completions with older timestamps are still imported. Missing usage is skipped; failed calls with recorded usage count. IDs include the originating Space machine, call id and start time. Each call is a synthetic session under `ai-space/<app>`, with its tag/runtime/backend as topic. Shared-store exports treat these as local rows.
 - Codex history (`src/codex-scanner.ts`): native and archived session JSONL; normalize inclusive input into uncached/cache-read/cache-write categories, never add reasoning output twice. The parser state (model, session and cumulative baseline) is stored under `codex-file:<path>` atomically with the file cursor. Session/message IDs are namespaced and stable across archive moves and shared-store copies. Copied child history is excluded by explicit ordinals, otherwise by the fork timestamp. `turns.service_tier` is nullable for old rows and exports.
+- DeepSeek Harness history (`src/deepseek-scanner.ts`): `$DSH_HOME/sessions/**/session*.jsonl(.zstd)`, one log per conversation; `assistant/message` carries the model and the four token kinds, `session` the cwd and creation time, `session/title` the topic. A changed file is decompressed and parsed whole (zstd frames are not appendable text), which is idempotent because turns upsert by message id; unchanged size+mtime skips it. A partial zstd frame is reported and retried next scan. `delegationDepth > 0` marks subagent work. `USAGE_DEEPSEEK=none` skips the source; the Space ledger stays Codex-only so these calls are not counted twice.
 - Codex plan limits (`src/codex-limits.ts`, scheduled by `Limits` with `provider: "codex"`): read `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), call `https://chatgpt.com/backend-api/wham/usage` with the bearer token and account header, publish `<machine>/limits-codex.json`. Never refresh or rewrite credentials. Provider snapshots and status remain separate; older snapshots without a provider are Claude.
 - `USAGE_ROLE=collector` (`config.ts`): the shared store is publish-only and `server.ts` registers no page, summary or widget route (they answer 404 with a line). Status, refresh, export and healthz stay.
 - Without a shared store, peers are pulled after every scan (`src/peers.ts`): discovery through `SPACE_API_URL` (`GET /api/apps?all=1`, entries named `ai-usage` with a `peer`) plus `USAGE_PEERS`; each pull asks `/api/export?since=` from the newest row held for that machine minus two days; results are upserted and the outcome kept in `meta` (`peer:<name>`).
@@ -32,6 +33,7 @@ src/index.ts         * entry point: serve, scan, today, stats
 src/scanner.ts       * Claude parser and incremental scanSources for both CLIs
 src/space-ledger.ts    readonly import of ephemeral Codex calls from the Space ledger
 src/codex-scanner.ts   Codex session metadata, token_count deltas and saved parser state
+src/deepseek-scanner.ts DeepSeek Harness zstd/JSONL session logs -> turns and topics
 src/store.ts         * bun:sqlite schema, upserts, the queries stats needs, export/import for peers
 src/stats.ts         * summary(): one window, one model and machine filter, one time zone -> everything the page shows
 src/server.ts        * routes: /api/summary, /api/status, /api/refresh, /api/export, /api/limits, /api/widget, /healthz, /icon.svg
@@ -39,10 +41,10 @@ src/shared.ts        * the shared store: object-store interface (S3 and in-memor
 src/limits.ts          plan usage limits: read the CLI's login, fetch /api/oauth/usage, publish and merge snapshots
 src/codex-limits.ts    native Codex login and subscription-window parsing
 src/peers.ts           peer discovery and pulls (the fallback without a shared store)
-src/pricing.ts         Claude rates, catalogue-based GPT costOf, shortModel, modelRank
+src/pricing.ts         Claude and DeepSeek rates, catalogue-based GPT costOf, shortModel, modelRank
 src/space-pricing.ts   versioned ai-space GPT pricing client, validation and persistent cache
 src/testing-pricing.ts synthetic GPT catalogue used only by tests
-src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*)
+src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*, DSH_HOME)
 web/App.tsx          * the page: filters in the URL, collapsed cards in localStorage, 60 s refresh
 web/charts.tsx         inline-SVG charts (stacked daily bars, hourly bars, horizontal bars), tooltip, legend
 web/api.ts             the JSON types as the page sees them, formatting helpers
@@ -86,7 +88,9 @@ space app deploy ai-usage --rev origin/main   # on a host whose checkout is a cl
 | `USAGE_CODEX_RUNTIMES` | explicit comma-separated Codex runtime names, including retired names | discover `kind: codex-cli` in workspace `runtimes.yaml` |
 | `SPACE_HOME` | workspace containing `runtimes.yaml` | infer from `SPACE_APP_DATA_DIR`, else `~/.ai-space` |
 | `CODEX_HOME` | Codex CLI directory containing `auth.json`, `sessions` and `archived_sessions` | `~/.codex` |
-| `USAGE_SOURCES` | comma-separated transcript directories | Claude projects/Xcode plus Codex sessions/archived_sessions |
+| `DSH_HOME` | DeepSeek Harness directory containing `sessions` | `~/.dsh` |
+| `USAGE_DEEPSEEK` | `none` skips the Harness session logs | scan `$DSH_HOME/sessions` |
+| `USAGE_SOURCES` | comma-separated Claude/Codex transcript directories (not DeepSeek) | Claude projects/Xcode plus Codex sessions/archived_sessions |
 | `USAGE_SCAN_INTERVAL` | seconds between scans | 300 |
 | `USAGE_ROLE` | `dashboard` (everything) or `collector` (scan and publish only; no page, no pulls) | dashboard |
 | `USAGE_SYNC_INTERVAL` | seconds between shared-store syncs | 1800 |
@@ -99,6 +103,7 @@ space app deploy ai-usage --rev origin/main   # on a host whose checkout is a cl
 ## Known pitfalls
 
 - A dispatch record (`toolUseResult` with `agentId` and `agentType`) is not always present; a subagent seen only through its `subagents/agent-<id>.jsonl` file gets type `subagent`, and its project comes from the session of its turns.
+- A DeepSeek Harness log being written can end in a partial zstd frame. `scanDeepseekSessions` reports it in `last.deepseek.error` and leaves the file's state untouched, so the next scan retries; a later success clears the error. The harness's title-generation request is not an `assistant/message` and carries no usage, so it is not counted.
 - `startOfDay` works from the zone's wall clock; on a DST transition day the boundary may be an hour off. Nothing else depends on it.
 - The space's `GET /api/apps?all=1` lists peer apps only once the hub has a snapshot of the peer; right after a boot the first pull may find no peers and the next one (five minutes later) does.
 - Two machines with the same `USAGE_MACHINE` overwrite each other's directory in the shared store; names must be unique. Renaming a machine leaves its old directory behind (delete it by hand), and readers relabel the rows on the next pull because turns are keyed by message id.

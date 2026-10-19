@@ -2,6 +2,7 @@ import { SpacePricing } from "./space-pricing.ts";
 import { hostname } from "node:os";
 import index from "../web/index.html";
 import { loadConfig } from "./config.ts";
+import { scanDeepseekSessions } from "./deepseek-scanner.ts";
 import { Limits } from "./limits.ts";
 import { Peers, parsePeerList } from "./peers.ts";
 import { shortModel } from "./pricing.ts";
@@ -17,7 +18,7 @@ import { Store } from "./store.ts";
  *
  *   bun src/index.ts               serve the dashboard on 127.0.0.1:$PORT (scans on boot and every USAGE_SCAN_INTERVAL; syncs the shared
  *                                  store every USAGE_SYNC_INTERVAL, or pulls peers after each scan when there is no store)
- *   bun src/index.ts scan          read new transcript lines into the cache, sync the shared store or pull the peers, and exit
+ *   bun src/index.ts scan          read new transcript lines and session logs into the cache, sync the shared store or pull the peers, and exit
  *   bun src/index.ts today         print today's usage by model
  *   bun src/index.ts stats [range] print totals, models, machines and projects for a range (7d by default; see RANGES)
  *
@@ -46,6 +47,17 @@ async function main(): Promise<void> {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const scan = async () => {
     const result = await scanSources(store, config.sources, { log });
+    if (config.deepseek) {
+      const deepseek = await scanDeepseekSessions(store, config.deepseek.dir, { log });
+      result.deepseek = deepseek;
+      if (deepseek.files) result.sources.push(deepseek.dir);
+      result.files += deepseek.files;
+      result.newFiles += deepseek.newFiles;
+      result.updatedFiles += deepseek.updatedFiles;
+      result.turns += deepseek.turns;
+      result.sessions += deepseek.sessions;
+      if (deepseek.newFiles || deepseek.updatedFiles) log(`DeepSeek Harness: ${deepseek.files} logs · ${deepseek.newFiles} new · ${deepseek.updatedFiles} updated · ${deepseek.turns} turns parsed`);
+    }
     if (config.ledger) {
       result.ledger = await scanSpaceLedger(store, config.ledger, machine);
       if (result.ledger.error) log(result.ledger.error);

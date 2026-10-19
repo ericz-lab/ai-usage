@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { SpacePricing } from "./space-pricing.ts";
 import type { Config } from "./config.ts";
 import type { Limit, Limits, LimitsSnapshot } from "./limits.ts";
@@ -205,7 +206,8 @@ export function createApp(opts: ServerOptions) {
     role: config.role,
     pricingAsOf: `${PRICING_AS_OF} / OpenAI ${opts.pricing?.catalog?.asOf ?? "unavailable"}`,
     gptPricing: opts.pricing?.state() ?? null,
-    sources: config.sources,
+    sources: [...config.sources, ...(config.deepseek && existsSync(config.deepseek.dir) ? [config.deepseek.dir] : [])],
+    deepseek: config.deepseek ? { dir: config.deepseek.dir, found: existsSync(config.deepseek.dir) } : null,
     ...store.counts(),
     lastScan: lastScanAt() || null,
     scanning: inflight !== null,

@@ -131,6 +131,13 @@ describe("loadConfig", () => {
     expect(loadConfig({ USAGE_ROLE: " Collector " }, "/home/x").role).toBe("collector");
     expect(() => loadConfig({ USAGE_ROLE: "viewer" }, "/home/x")).toThrow(/USAGE_ROLE/);
   });
+
+  test("DeepSeek Harness logs default to ~/.dsh/sessions; DSH_HOME moves them and USAGE_DEEPSEEK=none turns them off", () => {
+    expect(loadConfig({}, "/home/x").deepseek).toEqual({ dir: "/home/x/.dsh/sessions" });
+    expect(loadConfig({ DSH_HOME: "/data/dsh" }, "/home/x").deepseek).toEqual({ dir: "/data/dsh/sessions" });
+    expect(loadConfig({ DSH_HOME: "~/dsh-home" }, "/home/x").deepseek).toEqual({ dir: "/home/x/dsh-home/sessions" });
+    expect(loadConfig({ USAGE_DEEPSEEK: " None " }, "/home/x").deepseek).toBeUndefined();
+  });
 });
 
 describe("collector role", () => {

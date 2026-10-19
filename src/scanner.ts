@@ -189,8 +189,21 @@ export function parseTranscript(text: string, path = ""): Parsed {
 
 // ---------------------------------------------------------------- incremental scan
 
+/** What one DeepSeek Harness directory scan read (`deepseek-scanner.ts`). */
+export type DeepseekScan = {
+  dir: string;
+  files: number;
+  newFiles: number;
+  updatedFiles: number;
+  turns: number;
+  sessions: number;
+  ms: number;
+  error: string | null;
+};
+
 export type ScanResult = {
   ledger?: { imported: number; error: string | null };
+  deepseek?: DeepseekScan;
   sources: string[];
   files: number;
   newFiles: number;

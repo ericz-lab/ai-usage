@@ -1,10 +1,12 @@
 # ai-usage
 
-**What Claude Code and Codex spent, on this machine and the others, from the CLI's own transcripts.**
+**What Claude Code, Codex and DeepSeek Harness spent, on this machine and the others, from each tool's own session logs.**
 
 Claude Code writes a JSONL transcript for every session under `~/.claude/projects`, whatever the plan: each model response carries its model and the four token counts (input, output, cache write, cache read). ai-usage reads those files, keeps the numbers in a small SQLite cache and shows them as a dashboard: tokens and cost estimates by day, by hour, by model, by project and branch, by session, by subagent type, and by machine.
 
 Codex history comes from `~/.codex/sessions` and `~/.codex/archived_sessions` (or the same directories under `CODEX_HOME`). Its token records feed the same charts, filters, project/session tables, widget and shared-store sync. No subscription login is needed to read local history. ai-space Codex tasks that use ephemeral CLI sessions (translation, summaries, and similar calls) are imported from the local Space usage ledger.
+
+DeepSeek Harness history comes from `~/.dsh/sessions` (or `$DSH_HOME/sessions`): one log per conversation, zstd-compressed by default and plain JSONL when the harness's compression is off. Each assistant step records its model and token counts, so DeepSeek usage appears in the same models, projects, sessions and cost views as the other runtimes. The harness's title-generation request is logged without token usage and is not counted.
 
 It is an [ai-space](https://github.com/ericz-lab/ai-space) app and ships with it as a default app: a fresh space installs it on `init`. It also runs on its own with `bun src/index.ts`.
 
@@ -45,19 +47,26 @@ At Anthropic API list prices as of June 2026 (`src/pricing.ts`), per million tok
 | sonnet | $3 | $15 | $3.75 | $0.30 |
 | haiku | $1 | $5 | $1.25 | $0.10 |
 
-A model is priced by the family name its id contains; anything else (local models, `<synthetic>`) shows as n/a, never as zero. On a Pro or Max plan the figure is what the same usage would cost on the API, not a bill.
+DeepSeek models use DeepSeek's list prices at peak, per million tokens:
+
+| Model | Input | Output | Cache write | Cache read |
+| --- | --- | --- | --- | --- |
+| `deepseek-flash`, `deepseek-v4-flash` | $0.30 | $1.20 | $0.30 | $0.006 |
+| `deepseek-v4-pro` | $1.32 | $3.96 | $1.32 | $0.044 |
+
+A model is priced by the family name its id contains (Anthropic) or by its id (DeepSeek); anything else (local models, `<synthetic>`, unknown ids) shows as n/a, never as zero. On a Pro or Max plan the figure is what the same usage would cost on the API, not a bill. DeepSeek's off-peak discount is not modelled: the session log does not retain per-request billing windows, so the estimate stays at peak rates.
 
 ## Run
 
 ```bash
 bun install
 bun src/index.ts                 # http://127.0.0.1:8880
-bun src/index.ts scan            # read new transcript lines into the cache (and pull the peers), then exit
+bun src/index.ts scan            # read new transcript lines and session logs into the cache (and pull the peers), then exit
 bun src/index.ts today           # today's usage by model, in the terminal
 bun src/index.ts stats 30d       # totals, models, machines and projects for a range
 ```
 
-Environment (`.env.example` lists everything): `PORT`, `DATABASE_URL` or `SPACE_APP_DATA_DIR` for the cache, `USAGE_SOURCES` for other transcript directories, `USAGE_SCAN_INTERVAL`, `USAGE_SYNC_INTERVAL`, `USAGE_MACHINE` (else `SPACE_NAME`, else the hostname), `BLOB_URL` and `S3_*` for the shared store, `USAGE_PEERS`, `SPACE_API_URL` (set by ai-space).
+Environment (`.env.example` lists everything): `PORT`, `DATABASE_URL` or `SPACE_APP_DATA_DIR` for the cache, `USAGE_SOURCES` for other transcript directories, `DSH_HOME` for the DeepSeek Harness directory (default `~/.dsh`), `USAGE_DEEPSEEK=none` to skip its logs, `USAGE_SCAN_INTERVAL`, `USAGE_SYNC_INTERVAL`, `USAGE_MACHINE` (else `SPACE_NAME`, else the hostname), `BLOB_URL` and `S3_*` for the shared store, `USAGE_PEERS`, `SPACE_API_URL` (set by ai-space).
 
 ## Inside ai-space
 
@@ -79,7 +88,7 @@ Reads trust loopback; there is no token. Exposure is the space's job (a tunnel w
 
 ## Not captured
 
-Sessions that run server-side and write no local transcript (Claude's cloud sessions), and calls made through the Anthropic API directly. Calls an app makes through ai-space's model service on this machine do write transcripts (they run the CLI) and are counted; the space's own model ledger stays the place to see them by app and purpose.
+Sessions that run server-side and write no local transcript (Claude's cloud sessions), calls made through the Anthropic API directly, and DeepSeek Harness title generation. Calls an app makes through ai-space's model service on this machine do write transcripts (they run the CLI) and are counted; the space's own model ledger stays the place to see them by app and purpose.
 
 ## License
 
@@ -104,6 +113,14 @@ GPT rates are maintained by **ai-space**, in its `src/space/model/gpt-prices.jso
 The catalogue specifies its version, verification date, USD unit size, model rates, long-context thresholds/multipliers and optional Fast multiplier. The same rates power ai-space's Model usage. A successful response is cached in usage.db per source URL and survives restarts. On a timeout, invalid response or older ai-space without this endpoint, the last valid catalogue remains usable. With no valid catalogue, GPT costs show n/a; scanning and Claude costs still work. `/api/status` exposes `gptPricing` (source URL, date, fetch time, live/cached/unavailable state and error).
 
 Costs use the current catalogue, including for historical rows. Input categories stay separate; long-context rules apply per recorded request, and explicit priority/fast tiers use the catalogue multiplier. Unknown models, unsupported tiers or unavailable cache-write prices stay unpriced. These are API-equivalent estimates, not subscription fees or invoices; tool and regional charges are not inferred.
+
+## DeepSeek Harness history
+
+The harness writes one log per conversation under `$DSH_HOME/sessions/<cwd encoded>/<session>/session.v4.jsonl`, zstd-compressed (`.zstd`) by default and plain JSONL with compression off. The `session` event supplies the id, cwd and creation time; `session/title` supplies the topic; every `assistant/message` event carries the model, the message id and `inputTokens`, `outputTokens`, `cacheReadTokens` and `cacheWriteTokens`.
+
+Compressed logs are published in frames rather than appended as text, so a changed file is decompressed and parsed whole. Turns are upserted by message id, which makes the repeated work idempotent; unchanged files (same size and mtime) are skipped. A file caught mid-write can end in a partial zstd frame: that file is reported in `last.deepseek.error` and retried on the next scan. A session created by a delegated agent carries `delegationDepth > 0` and is marked as subagent work.
+
+`DSH_HOME` moves the harness directory (default `~/.dsh`); `USAGE_DEEPSEEK=none` turns the scan off. DeepSeek calls made by ai-space's own runtime are transcript-backed too, so the Space ledger import deliberately stays Codex-only and does not count them twice. The harness's title-generation request is not an `assistant/message` and carries no usage, so it is not counted.
 
 ## ai-space Codex tasks
 

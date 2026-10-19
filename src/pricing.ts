@@ -2,9 +2,10 @@ import type { GptCatalog } from "./space-pricing.ts";
 /**
  * API-equivalent cost estimates. GPT prices come from ai-space.
  * Anthropic API list prices (claude.com/pricing#api, June
- * 2026), in dollars per million tokens. A model is priced by the family name
- * its id contains; anything else (local models, `<synthetic>`, unknown ids)
- * has no price and shows as "n/a" rather than as zero. Subscription plans are
+ * 2026), and DeepSeek list prices at peak, in dollars per million tokens.
+ * A model is priced by the family name its id contains (Anthropic) or by its
+ * id (DeepSeek); anything else (local models, `<synthetic>`, unknown ids) has
+ * no price and shows as "n/a" rather than as zero. Subscription plans are
  * flat-rate, so for them the figure is what the same usage would have cost on
  * the API, not a bill.
  */
@@ -21,13 +22,27 @@ export const PRICES: { family: string; price: Price }[] = [
   { family: "haiku", price: { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 } },
 ];
 
+/**
+ * DeepSeek list prices, USD per million tokens at peak: input (cache miss),
+ * cache write (the API charges no extra for writing, so it equals input),
+ * cache hit, output. Off-peak calls cost half, but a session log has no
+ * per-request billing window, so this table is the peak estimate (the same
+ * convention as ai-space's own DeepSeek runtime).
+ */
+export const DEEPSEEK_PRICES: Record<string, Price> = {
+  "deepseek-flash": { input: 0.3, output: 1.2, cacheWrite: 0.3, cacheRead: 0.006 },
+  "deepseek-v4-flash": { input: 0.3, output: 1.2, cacheWrite: 0.3, cacheRead: 0.006 },
+  "deepseek-v4-pro": { input: 1.32, output: 3.96, cacheWrite: 1.32, cacheRead: 0.044 },
+};
+
 /** GPT dates come from the cached ai-space catalogue. */
-export const PRICING_AS_OF = "Anthropic 2026-06";
+export const PRICING_AS_OF = "Anthropic 2026-06 · DeepSeek peak list";
 const openaiModel = (model: string) => model.toLowerCase().replace(/-\d{4}-\d{2}-\d{2}$/, "");
 
 export function priceFor(model: string, catalog?: GptCatalog): Price | null {
   const m = model.toLowerCase();
   if (m.startsWith("gpt-")) return catalog?.models[openaiModel(m)] ?? null;
+  if (m.startsWith("deepseek-")) return DEEPSEEK_PRICES[m] ?? null;
   for (const { family, price } of PRICES) if (m.includes(family)) return price;
   return null;
 }
@@ -50,8 +65,10 @@ export function costOf(model: string, u: TokenUsage, catalog?: GptCatalog): numb
   return (u.input * p.input + u.output * p.output + u.cacheWrite * (p.cacheWrite ?? 0) + u.cacheRead * p.cacheRead) / 1e6;
 }
 
-/** `claude-haiku-4-5-20251001` -> `haiku 4.5`, `claude-fable-5-1` -> `fable 5.1`; unknown shapes are returned as is. */
+/** `claude-haiku-4-5-20251001` -> `haiku 4.5`, `claude-fable-5-1` -> `fable 5.1`; DeepSeek ids get their catalogue name; unknown shapes are returned as is. */
 export function shortModel(model: string): string {
+  if (model === "deepseek-v4-pro") return "DeepSeek V4 Pro";
+  if (model === "deepseek-flash" || model === "deepseek-v4-flash") return "DeepSeek Flash";
   const m = model.match(/^claude-([a-z]+)-(\d+)(?:-(\d+))?(?:-\d{8})?$/);
   if (!m) return model;
   return `${m[1]} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
@@ -68,5 +85,7 @@ export function modelRank(model: string): number {
   if (m.includes("opus")) return 3;
   if (m.includes("sonnet")) return 2;
   if (m.includes("haiku")) return 1;
+  if (m === "deepseek-v4-pro") return 3;
+  if (m.startsWith("deepseek-")) return 1;
   return 0;
 }

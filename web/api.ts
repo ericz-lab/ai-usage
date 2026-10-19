@@ -32,6 +32,7 @@ export type Status = {
   machine: string;
   pricingAsOf: string;
   sources: string[];
+  deepseek: { dir: string; found: boolean } | null;
   files: number;
   sessions: number;
   turns: number;

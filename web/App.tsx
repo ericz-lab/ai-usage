@@ -13,8 +13,10 @@ const RANGES = ["5h", "today", "7d", "30d", "90d", "all"] as const;
 type Range = (typeof RANGES)[number];
 const REFRESH_MS = 60_000;
 
-/** `claude-haiku-4-5-20251001` -> `haiku 4.5`; the page's copy of the server's helper. */
+/** `claude-haiku-4-5-20251001` -> `haiku 4.5`; DeepSeek ids get their catalogue name; the page's copy of the server's helper. */
 const shortModel = (model: string): string => {
+  if (model === "deepseek-v4-pro") return "DeepSeek V4 Pro";
+  if (model === "deepseek-flash" || model === "deepseek-v4-flash") return "DeepSeek Flash";
   const m = model.match(/^claude-([a-z]+)-(\d+)(?:-(\d+))?(?:-\d{8})?$/);
   return m ? `${m[1]} ${m[2]}${m[3] ? `.${m[3]}` : ""}` : model;
 };
