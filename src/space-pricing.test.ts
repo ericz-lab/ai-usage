@@ -58,3 +58,18 @@ test("invalid cached data does not prevent fetching a valid catalogue", async ()
     expect(prices.state().status).toBe("live");
   } finally { store.close(); }
 });
+
+test("sends the app token as a bearer header only when one is given", async () => {
+  const store = new Store(":memory:");
+  const seen: (string | null)[] = [];
+  const fetcher = (async (_url: string, init?: RequestInit) => {
+    seen.push(new Headers(init?.headers).get("authorization"));
+    return Response.json(testCatalog);
+  }) as unknown as typeof fetch;
+  try {
+    await new SpacePricing({ store, fetch: fetcher, token: "app-secret" }).refresh();
+    await new SpacePricing({ store, fetch: fetcher }).refresh();
+    await new SpacePricing({ store, fetch: fetcher, token: "" }).refresh();
+    expect(seen).toEqual(["Bearer app-secret", null, null]);
+  } finally { store.close(); }
+});
