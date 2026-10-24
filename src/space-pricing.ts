@@ -39,7 +39,8 @@ export class SpacePricing {
   private readonly key: string;
   readonly url: string;
 
-  constructor(private readonly opts: { store: Pick<Store, "getMeta" | "setMeta">; url?: string; fetch?: typeof fetch; now?: () => number }) {
+  /** `token` is the app's `SPACE_APP_TOKEN`: the space refuses an app's reads without it under `SPACE_AUTH=builtin`. */
+  constructor(private readonly opts: { store: Pick<Store, "getMeta" | "setMeta">; url?: string; token?: string; fetch?: typeof fetch; now?: () => number }) {
     this.url = `${(opts.url?.trim() || "http://127.0.0.1:8700").replace(/\/+$/, "")}/api/model/pricing`;
     this.key = `gpt-pricing:${this.url}`;
     try {
@@ -67,7 +68,9 @@ export class SpacePricing {
 
   private async load(now: number) {
     try {
-      const res = await (this.opts.fetch ?? fetch)(this.url, { signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
+      const headers: Record<string, string> = { accept: "application/json" };
+      if (this.opts.token) headers.authorization = `Bearer ${this.opts.token}`;
+      const res = await (this.opts.fetch ?? fetch)(this.url, { signal: AbortSignal.timeout(5000), headers });
       if (!res.ok) throw new Error(`pricing HTTP ${res.status}`);
       const text = await res.text();
       if (text.length > 256_000) throw new Error("pricing response too large");

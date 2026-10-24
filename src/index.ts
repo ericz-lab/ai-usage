@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const machine = process.env.USAGE_MACHINE?.trim() || process.env.SPACE_NAME?.trim() || hostname();
   const store = new Store(config.dbPath);
-  const pricing = new SpacePricing({ store, url: process.env.SPACE_API_URL });
+  const pricing = new SpacePricing({ store, url: process.env.SPACE_API_URL, token: process.env.SPACE_APP_TOKEN?.trim() || undefined });
   await pricing.refresh();
   const peers = new Peers({ store, spaceApiUrl: process.env.SPACE_API_URL?.trim() || undefined, spaceToken: process.env.SPACE_APP_TOKEN?.trim() || undefined, direct: parsePeerList(process.env.USAGE_PEERS), log });
   const objects = objectStoreFromEnv(process.env);
