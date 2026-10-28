@@ -13,7 +13,8 @@ export type Summary = {
   selected: string[];
   machines: { machine: string; turns: number; local: boolean }[];
   selectedMachines: string[];
-  totals: Totals & { sessions: number; days: number; subagentTokens: number; subagentTurns: number; perDay: { tokens: number; cost: number | null } };
+  /** `cost` is null once any row is unpriced; `pricedCost` then sums the priced rows only, a floor. */
+  totals: Totals & { sessions: number; days: number; subagentTokens: number; subagentTurns: number; pricedCost: number; unpricedTokens: number; unpricedModels: string[]; perDay: { tokens: number; cost: number | null; pricedCost: number } };
   daily: { day: string; tokens: number; cost: number | null; byModel: Record<string, number> }[];
   hourly: { hour: number; tokens: number; cost: number | null; avgTokens: number }[];
   hourlyDays: number;
@@ -84,6 +85,9 @@ export const fmtCost = (usd: number | null, lang: Lang): string => {
   if (usd >= 1) return `$${usd.toFixed(2)}`;
   return `$${usd.toFixed(3)}`;
 };
+
+/** A total with unpriced rows: the priced part as a floor ("≥ $12.30"), or "unpriced" when nothing is priced. */
+export const fmtCostFloor = (cost: number | null, priced: number, lang: Lang): string => (cost !== null ? fmtCost(cost, lang) : priced > 0 ? `≥ ${fmtCost(priced, lang)}` : translate(lang, "na"));
 
 export const fmtInt = (n: number, lang: Lang): string => n.toLocaleString(LOCALE[lang]);
 

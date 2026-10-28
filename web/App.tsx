@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { type LimitsReply, type LimitsSnapshot, type Status, type Summary, type Totals, dateTime, fmtCost, fmtInt, fmtMinutes, fmtTokens, getJson, planName, postJson, relTime, shortDay } from "./api.ts";
+import { type LimitsReply, type LimitsSnapshot, type Status, type Summary, type Totals, dateTime, fmtCost, fmtCostFloor, fmtInt, fmtMinutes, fmtTokens, getJson, planName, postJson, relTime, shortDay } from "./api.ts";
 import { HBars, HourBars, Legend, SLOTS, type StackDay, StackedBars, Tooltip, type Tip, seriesVar } from "./charts.tsx";
 import { type Key, LOCALE, type Lang, detectLang, translate } from "./i18n.ts";
 
@@ -392,9 +392,18 @@ export default function App() {
               <b>{fmtTokens(tot.tokens)}</b>
               <span>{t("tokens")}{tot.subagentTokens ? ` · ${t("subagentShare", { pct: Math.round((tot.subagentTokens / Math.max(1, tot.tokens)) * 100) })}` : ""}</span>
             </div>
-            <div className="stat" title={t("costHint", { asOf: status?.pricingAsOf ?? "" })}>
-              <b>{fmtCost(tot.cost, lang)}</b>
-              <span>{t("cost")}</span>
+            <div
+              className="stat"
+              title={[
+                t("costHint", { asOf: status?.pricingAsOf ?? "" }),
+                ...(tot.cost === null ? [t("unpricedHint", { models: tot.unpricedModels.join(", "), tokens: fmtTokens(tot.unpricedTokens) })] : []),
+              ].join("\n\n")}
+            >
+              <b>{fmtCostFloor(tot.cost, tot.pricedCost, lang)}</b>
+              <span>
+                {t("cost")}
+                {tot.cost === null ? ` · ${t("unpricedCount", { n: tot.unpricedModels.length })}` : ""}
+              </span>
             </div>
             <div className="stat">
               <b>{fmtInt(tot.sessions, lang)}</b>
@@ -407,7 +416,7 @@ export default function App() {
             <div className="stat" title={t("perDayHint", { n: summary.daily.length })}>
               <b>{fmtTokens(tot.perDay.tokens)}</b>
               <span>
-                {t("perDay")} · {fmtCost(tot.perDay.cost, lang)}
+                {t("perDay")} · {fmtCostFloor(tot.perDay.cost, tot.perDay.pricedCost, lang)}
               </span>
             </div>
           </div>

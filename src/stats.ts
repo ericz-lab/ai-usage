@@ -26,7 +26,8 @@ export type Summary = {
   /** Every machine with rows; `local` is the one this service runs on and is named by the caller. */
   machines: { machine: string; turns: number; local: boolean }[];
   selectedMachines: string[];
-  totals: Totals & { sessions: number; days: number; subagentTokens: number; subagentTurns: number; perDay: { tokens: number; cost: number | null } };
+  /** `cost` is null once any row is unpriced; `pricedCost` is then the sum over the priced rows only (a floor), and `unpricedModels` names the rest. */
+  totals: Totals & { sessions: number; days: number; subagentTokens: number; subagentTurns: number; pricedCost: number; unpricedTokens: number; unpricedModels: string[]; perDay: { tokens: number; cost: number | null; pricedCost: number } };
   daily: { day: string; tokens: number; cost: number | null; byModel: Record<string, number> }[];
   hourly: { hour: number; tokens: number; cost: number | null; avgTokens: number }[];
   hourlyDays: number;
@@ -158,7 +159,8 @@ export function summary(store: Store, opts: SummaryOptions): Summary {
   const agentType = new Map(store.agents().map((a) => [a.agent_id, a]));
   const costs = rows.map((r) => costOf(r.model, { input: r.input, output: r.output, cacheRead: r.cache_read, cacheWrite: r.cache_write, serviceTier: r.service_tier }, opts.pricing));
 
-  const totals = { ...zero(), sessions: 0, days: 0, subagentTokens: 0, subagentTurns: 0, perDay: { tokens: 0, cost: 0 as number | null } };
+  const totals = { ...zero(), sessions: 0, days: 0, subagentTokens: 0, subagentTurns: 0, pricedCost: 0, unpricedTokens: 0, unpricedModels: [] as string[], perDay: { tokens: 0, cost: 0 as number | null, pricedCost: 0 } };
+  const unpriced = new Map<string, number>();
   const byDay = new Map<string, { tokens: number; cost: number | null; byModel: Record<string, number> }>();
   const byHour = Array.from({ length: 24 }, () => ({ tokens: 0, cost: 0 as number | null }));
   const daysSeen = new Set<string>();
@@ -182,6 +184,10 @@ export function summary(store: Store, opts: SummaryOptions): Summary {
     const cost = costs[i] ?? null;
     const tokens = r.input + r.output + r.cache_read + r.cache_write;
     add(totals, r, cost);
+    if (cost === null) {
+      totals.unpricedTokens += tokens;
+      unpriced.set(r.model, (unpriced.get(r.model) ?? 0) + tokens);
+    } else totals.pricedCost += cost;
     const day = dayKey(r.ts, tz);
     daysSeen.add(day);
     let d = byDay.get(day);
@@ -232,7 +238,8 @@ export function summary(store: Store, opts: SummaryOptions): Summary {
   // Calendar days the window spans so far: a quiet day counts against the average.
   const firstDay = opts.range === "all" ? (rows[0] ? startOfDay(rows[0].ts, tz) : startOfDay(now, tz)) : Math.max(from, startOfDay(from, tz));
   const spanDays = opts.range === "5h" ? 1 : Math.max(1, Math.round((startOfDay(now, tz) - startOfDay(firstDay, tz)) / DAY) + 1);
-  totals.perDay = { tokens: Math.round(totals.tokens / spanDays), cost: totals.cost === null ? null : totals.cost / spanDays };
+  totals.perDay = { tokens: Math.round(totals.tokens / spanDays), cost: totals.cost === null ? null : totals.cost / spanDays, pricedCost: totals.pricedCost / spanDays };
+  totals.unpricedModels = [...unpriced.entries()].sort((a, b) => b[1] - a[1]).map(([m]) => m);
 
   const daily: Summary["daily"] = [];
   if (opts.range === "5h") {

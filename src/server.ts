@@ -282,7 +282,7 @@ export function createApp(opts: ServerOptions) {
             blocks,
             items: [
               { text: `Today · ${fmtTokens(today.totals.tokens)} tokens · ${fmtCost(today.totals.cost)} · ${today.totals.sessions} sessions`, url: "/?range=today", time: at },
-              { text: `7 days · ${fmtTokens(week.totals.tokens)} tokens · ${fmtCost(week.totals.cost)} · ${fmtCost(week.totals.perDay.cost)} per day${machines}`, url: "/?range=7d", time: at },
+              { text: `7 days · ${fmtTokens(week.totals.tokens)} tokens · ${week.totals.cost === null && week.totals.pricedCost > 0 ? `≥ ${fmtCost(week.totals.pricedCost)}` : fmtCost(week.totals.cost)} · ${week.totals.perDay.cost === null && week.totals.perDay.pricedCost > 0 ? `≥ ${fmtCost(week.totals.perDay.pricedCost)}` : fmtCost(week.totals.perDay.cost)} per day${machines}`, url: "/?range=7d", time: at },
               ...(top ? [{ text: `Top model · ${top.model} · ${fmtTokens(top.tokens)} tokens in 7 days`, url: "/?range=7d" }] : []),
               ...plans.map((plan) => ({ text: `${plan.provider === "codex" ? "Codex" : "Claude"} · ${plan.limits.map((l) => `${limitName(l)} ${Math.round(l.resetsAt !== null && l.resetsAt <= now() ? 0 : l.percent)}%`).join(" · ")}`, url: "/", time: new Date(plan.fetchedAt).toISOString() })),
             ],

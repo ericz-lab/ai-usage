@@ -82,6 +82,12 @@ describe("summary", () => {
     expect(all.totals.cost).toBeNull();
     expect(all.byModel.find((m) => m.model === "local-llm")?.cost).toBeNull();
     expect(all.byModel.find((m) => m.model === "claude-sonnet-5")?.cost).not.toBeNull();
+    // The priced part stays visible as a floor, and the unpriced models are named.
+    const priced = all.byModel.reduce((sum, m) => sum + (m.cost ?? 0), 0);
+    expect(all.totals.pricedCost).toBeCloseTo(priced, 10);
+    expect(all.totals.pricedCost).toBeGreaterThan(0);
+    expect(all.totals.unpricedModels).toEqual(["local-llm"]);
+    expect(all.totals.unpricedTokens).toBe(all.byModel.find((m) => m.model === "local-llm")!.tokens);
     expect(all.daily[0]?.day).toBe("2026-08-10");
     expect(all.daily).toHaveLength(41);
   });
