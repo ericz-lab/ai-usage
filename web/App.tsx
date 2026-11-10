@@ -1,4 +1,4 @@
-import { type CSSProperties, createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LimitsReply, type LimitsSnapshot, type Status, type Summary, type Totals, dateTime, fmtCost, fmtCostFloor, fmtInt, fmtMinutes, fmtTokens, getJson, planName, postJson, relTime, shortDay } from "./api.ts";
 import { HBars, HourBars, Legend, SLOTS, type StackDay, StackedBars, Tooltip, type Tip, seriesVar } from "./charts.tsx";
 import { type Key, LANG_KEY, LOCALE, type Lang, detectLang, translate } from "./i18n.ts";
@@ -6,8 +6,9 @@ import { type Key, LANG_KEY, LOCALE, type Lang, detectLang, translate } from "./
 /**
  * The dashboard, on the Space Tiles kit (web/kit.css, ai-space docs/ui-kit.md): a left column with
  * the filters (a drawer below 960 px, `body.sp-open-nav`) and the work column. State that a link
- * should carry (range, models, machines) lives in the URL; which cards are collapsed, the language
- * and the theme live in localStorage. The summary is re-read every 60 s while the tab is visible.
+ * should carry (range, models, machines) lives in the URL; the tab open in each tabbed tile, the
+ * language and the theme live in localStorage. The work column reads top down in three levels: the
+ * window's cost with the daily chart, then the breakdown, then the tables, one tab at a time. The summary is re-read every 60 s while the tab is visible.
  */
 
 const RANGES = ["5h", "today", "7d", "30d", "90d", "all"] as const;
@@ -60,25 +61,6 @@ function writeParams(range: Range, models: string[], machines: string[], lang: L
   history.replaceState(null, "", `?${p}`);
 }
 
-function useCollapsed(): [Set<string>, (k: string) => void] {
-  const [set, setSet] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(store.get("usage-collapsed") || "[]") as string[]);
-    } catch {
-      return new Set();
-    }
-  });
-  const toggle = (k: string) =>
-    setSet((s) => {
-      const n = new Set(s);
-      if (n.has(k)) n.delete(k);
-      else n.add(k);
-      store.set("usage-collapsed", JSON.stringify([...n]));
-      return n;
-    });
-  return [set, toggle];
-}
-
 // ---------------------------------------------------------------- icons
 
 const PATHS = {
@@ -106,30 +88,61 @@ function Icon({ name, className = "" }: { name: keyof typeof PATHS; className?: 
 
 // ---------------------------------------------------------------- tiles and tables
 
-const CardCtx = createContext<{ collapsed: Set<string>; toggle: (k: string) => void; t: T }>({ collapsed: new Set(), toggle: () => {}, t: (k) => k });
-
-function Card({ id, title, hint, right, className = "", children }: { id: string; title: string; hint?: string; right?: ReactNode; className?: string; children: ReactNode }) {
-  const { collapsed, toggle, t } = useContext(CardCtx);
-  const closed = collapsed.has(id);
+function Card({ id, title, hint, className = "", children }: { id: string; title: string; hint?: string; className?: string; children: ReactNode }) {
   return (
-    <section className={`sp-tile card${closed ? " closed" : ""} ${className}`} id={id} aria-labelledby={`${id}-t`}>
+    <section className={`sp-tile card ${className}`} id={id} aria-labelledby={`${id}-t`}>
       <div className="card-head">
         <h2 className="sp-tt" id={`${id}-t`}>
           <span className="sp-sq" aria-hidden="true" />
           {title}
         </h2>
         {hint && <span className="hint">{hint}</span>}
-        <span className="spacer" />
-        {!closed && right}
-        <button type="button" className="sp-icon-btn caret" onClick={() => toggle(id)} aria-expanded={!closed} aria-controls={`${id}-b`} aria-label={closed ? t("expand") : t("collapse")} title={closed ? t("expand") : t("collapse")}>
-          <Icon name="chevron" />
-        </button>
       </div>
-      {!closed && (
-        <div className="card-body" id={`${id}-b`}>
-          {children}
-        </div>
-      )}
+      {children}
+    </section>
+  );
+}
+
+/** A heading on the canvas that opens a level of the page: a title and one muted line. */
+const SectionHead = ({ title, sub }: { title: string; sub: string }) => (
+  <div className="sec-head">
+    <h2>{title}</h2>
+    <p>{sub}</p>
+  </div>
+);
+
+type TabDef = { key: string; label: string; title?: string; n?: number; body: ReactNode };
+
+/** A tile that shows one of several views; the choice is remembered per tile. Arrow keys move between tabs. */
+function Tabs({ id, label, tabs, className = "" }: { id: string; label: string; tabs: TabDef[]; className?: string }) {
+  const [sel, setSel] = useState(() => store.get(`ai-usage.tab.${id}`) ?? "");
+  const cur = tabs.find((x) => x.key === sel) ?? tabs[0];
+  if (!cur) return null;
+  const pick = (k: string) => {
+    store.set(`ai-usage.tab.${id}`, k);
+    setSel(k);
+  };
+  const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = tabs[(tabs.indexOf(cur) + step + tabs.length) % tabs.length]!;
+    pick(next.key);
+    document.getElementById(`${id}-tab-${next.key}`)?.focus();
+  };
+  return (
+    <section className={`sp-tile card tabbed ${className}`} id={id}>
+      <div className="tabs" role="tablist" aria-label={label} onKeyDown={onKey}>
+        {tabs.map((x) => (
+          <button key={x.key} type="button" role="tab" id={`${id}-tab-${x.key}`} aria-selected={x.key === cur.key} aria-controls={`${id}-panel`} tabIndex={x.key === cur.key ? 0 : -1} title={x.title} onClick={() => pick(x.key)}>
+            {x.label}
+            {x.n !== undefined && <span className="n">{x.n}</span>}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${cur.key}`} key={cur.key}>
+        {cur.body}
+      </div>
     </section>
   );
 }
@@ -219,7 +232,7 @@ const Meter = ({ v, color, className = "" }: { v: number; color?: string; classN
 );
 
 /** The /usage meters: one block per account (the newest reading), session first, then the weekly ones. */
-function LimitsCard({ snaps, lang, t }: { snaps: LimitsSnapshot[]; lang: Lang; t: T }) {
+function LimitsCard({ snaps, lang, t, className }: { snaps: LimitsSnapshot[]; lang: Lang; t: T; className?: string }) {
   const now = Date.now();
   const resets = (at: number | null): string => {
     if (at === null) return "";
@@ -229,7 +242,7 @@ function LimitsCard({ snaps, lang, t }: { snaps: LimitsSnapshot[]; lang: Lang; t
     return t("resetsAt", { at: new Date(at).toLocaleString(LOCALE[lang], { weekday: "short", hour: "numeric", minute: "2-digit" }) });
   };
   return (
-    <Card id="limits" title={t("limits")}>
+    <Card id="limits" title={t("limits")} className={className}>
       {!snaps.length && <p className="note">{t("limitsNone")}</p>}
       {snaps.map((s) => {
         const rows = [...s.limits.filter((l) => l.group === "session"), ...s.limits.filter((l) => l.group !== "session")];
@@ -247,16 +260,16 @@ function LimitsCard({ snaps, lang, t }: { snaps: LimitsSnapshot[]; lang: Lang; t
                 return (
                   <div key={`${l.kind}/${l.label ?? ""}`} className={`meter ${level}`}>
                     <div className="m-top">
-                      <span>{name}</span>
-                      <span className="m-val">
-                        {level && <span className="lvl">{t(level === "bad" ? "limit.bad" : "limit.warn")}</span>}
-                        {t("used", { pct })}
+                      <span className="m-name" title={name}>
+                        {name}
                       </span>
+                      <span className="m-val">{t("used", { pct })}</span>
                     </div>
                     <Meter v={pct} className={level} />
-                    <span className="m-sub" title={l.resetsAt ? dateTime(l.resetsAt, lang) : ""}>
-                      {resets(l.resetsAt)}
-                    </span>
+                    <div className="m-sub">
+                      <span title={l.resetsAt ? dateTime(l.resetsAt, lang) : ""}>{resets(l.resetsAt)}</span>
+                      {level && <span className="lvl">{t(level === "bad" ? "limit.bad" : "limit.warn")}</span>}
+                    </div>
                   </div>
                 );
               })}
@@ -290,7 +303,6 @@ export default function App() {
   const [tip, setTip] = useState<Tip>(null);
   const [q, setQ] = useState("");
   const [navOpen, setNavOpen] = useState(false);
-  const [collapsed, toggleCard] = useCollapsed();
   const searchRef = useRef<HTMLInputElement>(null);
   const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
@@ -447,16 +459,16 @@ export default function App() {
     return first === last ? dayText(first, lang, year) : `${dayText(first, lang, year)} – ${dayText(last, lang, year)}`;
   }, [summary, range, lang]);
 
-  const ctx = useMemo(() => ({ collapsed, toggle: toggleCard, t }), [collapsed, toggleCard, t]);
   const projects = summary ? summary.byProject.filter((p) => hit(p.project, p.machine)) : [];
   const branches = summary ? summary.byBranch.filter((b) => hit(b.project, b.branch, b.machine)) : [];
   const sessions = summary ? summary.sessions.filter((s) => hit(s.project, s.topic, s.branch, s.machine, s.model, shortModel(s.model))) : [];
   const dispatches = summary ? summary.dispatches.filter((d) => hit(d.project, d.type, d.machine, d.status)) : [];
   const subagentRows = summary ? summary.subagents.map((s) => ({ key: s.type, label: s.type, value: s.tokens, title: `${s.dispatches} · ${fmtCost(s.cost, lang)}` })) : [];
+  const downPeers = status ? [...(status.shared?.machines ?? []), ...status.peers].filter((m) => !m.ok) : [];
   const machineChip = (m: string) => (multiMachine ? <span className="tag">{m}</span> : null);
 
   return (
-    <CardCtx.Provider value={ctx}>
+    <>
       <div className="sp-app">
         <nav className="sp-tile sp-side" id="side" aria-label={t("navAria")}>
           <div className="sp-brand">
@@ -587,24 +599,12 @@ export default function App() {
                   {span && <span>{span}</span>}
                   <span>{summary?.tz ?? tz}</span>
                 </div>
-                {status && (
+                {downPeers.length > 0 && (
                   <div className="head-status">
-                    <span title={status.sources.join("\n")}>
-                      {status.machine} · {t("files", { n: status.files })}
-                    </span>
-                    {status.shared && (
-                      <span title={`${status.shared.url}\n${t("sharedHint")}`}>{t("shared", { ago: status.shared.lastSyncAt ? relTime(status.shared.lastSyncAt, lang) : t("never") })}</span>
-                    )}
-                    {(status.shared?.machines ?? []).map((m) => (
-                      <span key={m.name} className="peer" title={m.ok ? t("machineOk", { name: m.name, ago: m.updatedAt ? relTime(m.updatedAt, lang) : t("never") }) : t("peerDown", { name: m.name, error: m.error ?? "" })}>
-                        <i className={`sp-dot ${m.ok ? "ok" : "bad"}`} />
+                    {downPeers.map((m) => (
+                      <span key={m.name} className="peer" title={t("peerDown", { name: m.name, error: m.error ?? "" })}>
+                        <i className="sp-dot bad" />
                         {m.name}
-                      </span>
-                    ))}
-                    {status.peers.map((p) => (
-                      <span key={p.name} className="peer" title={p.ok ? t("peerOk", { name: p.name, ago: p.lastPullAt ? relTime(p.lastPullAt, lang) : t("never") }) : t("peerDown", { name: p.name, error: p.error ?? "" })}>
-                        <i className={`sp-dot ${p.ok ? "ok" : "bad"}`} />
-                        {p.name}
                       </span>
                     ))}
                   </div>
@@ -631,16 +631,9 @@ export default function App() {
 
             {!summary && !err && (
               <div className="board" aria-busy="true" aria-label={t("loading")}>
-                <div className="sk-figs">
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <div key={i}>
-                      <span className="sp-sk" style={{ width: "40%" }} />
-                      <span className="sp-sk fig" />
-                    </div>
-                  ))}
-                </div>
                 <div className="sp-tile pad sk-tile span-8">
-                  <span className="sp-sk" style={{ width: "30%" }} />
+                  <span className="sp-sk" style={{ width: "20%" }} />
+                  <span className="sp-sk fig" />
                   <span className="sp-sk plot" />
                 </div>
                 <div className="sp-tile pad sk-tile span-4">
@@ -661,55 +654,49 @@ export default function App() {
               </section>
             )}
 
-            {limits && <LimitsCard snaps={limits} lang={lang} t={t} />}
-
             {summary && tot && (
               <>
-                <div className="figs">
-                  <div className="fig">
-                    <span className="sp-unit">{t("tokens")}</span>
-                    <span className="sp-fig">{fmtTokens(tot.tokens)}</span>
-                    <span className="sp-unit">{tot.subagentTokens ? t("subagentShare", { pct: Math.round((tot.subagentTokens / Math.max(1, tot.tokens)) * 100) }) : " "}</span>
-                  </div>
-                  <div
-                    className="fig cost"
-                    title={[t("costHint", { asOf: status?.pricingAsOf ?? "" }), ...(tot.cost === null ? [t("unpricedHint", { models: tot.unpricedModels.join(", "), tokens: fmtTokens(tot.unpricedTokens) })] : [])].join("\n\n")}
-                  >
-                    <span className="sp-unit">{t("cost")}</span>
-                    <span className="sp-fig lg">{fmtCostFloor(tot.cost, tot.pricedCost, lang)}</span>
-                    <span className="sp-unit">{tot.cost === null ? t("unpricedCount", { n: tot.unpricedModels.length }) : " "}</span>
-                  </div>
-                  <div className="fig">
-                    <span className="sp-unit">{t("sessions")}</span>
-                    <span className="sp-fig">{fmtInt(tot.sessions, lang)}</span>
-                    <span className="sp-unit"> </span>
-                  </div>
-                  <div className="fig">
-                    <span className="sp-unit">{t("turns")}</span>
-                    <span className="sp-fig">{fmtInt(tot.turns, lang)}</span>
-                    <span className="sp-unit"> </span>
-                  </div>
-                  <div className="fig" title={t("perDayHint", { n: summary.daily.length })}>
-                    <span className="sp-unit">{t("perDay")}</span>
-                    <span className="sp-fig">{fmtTokens(tot.perDay.tokens)}</span>
-                    <span className="sp-unit">{fmtCostFloor(tot.perDay.cost, tot.perDay.pricedCost, lang)}</span>
-                  </div>
-                </div>
-
-                {tot.turns === 0 && status && status.turns > 0 && (
-                  <section className="sp-tile state-tile">
-                    <div className="sp-state">
-                      <span className="ico">
-                        <Icon name="inbox" />
-                      </span>
-                      <p>{t("empty")}</p>
+                <div className="board overview">
+                  <section className={`sp-tile hero${limits && limits.length > 0 ? " span-8" : ""}`} aria-label={t("cost")}>
+                    <div className="hero-top">
+                      <div
+                        className="hero-main"
+                        title={[t("costHint", { asOf: status?.pricingAsOf ?? "" }), ...(tot.cost === null ? [t("unpricedHint", { models: tot.unpricedModels.join(", "), tokens: fmtTokens(tot.unpricedTokens) })] : [])].join("\n\n")}
+                      >
+                        <span className="sp-unit">{t("cost")}</span>
+                        <span className="sp-fig lg">{fmtCostFloor(tot.cost, tot.pricedCost, lang)}</span>
+                        {tot.cost === null && <span className="sp-unit">{t("unpricedCount", { n: tot.unpricedModels.length })}</span>}
+                      </div>
+                      <dl className="stats">
+                        <div className="stat">
+                          <dt>{t("tokens")}</dt>
+                          <dd>{fmtTokens(tot.tokens)}</dd>
+                          {tot.subagentTokens > 0 && <dd className="sub">{t("subagentShare", { pct: Math.round((tot.subagentTokens / Math.max(1, tot.tokens)) * 100) })}</dd>}
+                        </div>
+                        <div className="stat">
+                          <dt>{t("sessions")}</dt>
+                          <dd>{fmtInt(tot.sessions, lang)}</dd>
+                        </div>
+                        <div className="stat">
+                          <dt>{t("turns")}</dt>
+                          <dd>{fmtInt(tot.turns, lang)}</dd>
+                        </div>
+                        <div className="stat" title={t("perDayHint", { n: summary.daily.length })}>
+                          <dt>{t("perDay")}</dt>
+                          <dd>{fmtTokens(tot.perDay.tokens)}</dd>
+                          <dd className="sub">{fmtCostFloor(tot.perDay.cost, tot.perDay.pricedCost, lang)}</dd>
+                        </div>
+                      </dl>
                     </div>
-                  </section>
-                )}
-
-                {tot.turns > 0 && (
-                  <div className="board">
-                    <Card id="daily" title={t("daily")} hint={t("dailyByModel")} className="span-8">
+                    {tot.turns > 0 && (
+                      <div className="hero-chart" id="daily">
+                        <div className="card-head">
+                          <h2 className="sp-tt">
+                            <span className="sp-sq" aria-hidden="true" />
+                            {t("daily")}
+                          </h2>
+                          <span className="hint">{t("dailyByModel")}</span>
+                        </div>
                       <StackedBars
                         days={stackDays}
                         slotOf={stackSlot}
@@ -742,9 +729,77 @@ export default function App() {
                         }}
                       />
                       {legend.length > 1 && <Legend items={legend} />}
-                    </Card>
+                      </div>
+                    )}
+                  </section>
+                  {limits && limits.length > 0 && <LimitsCard snaps={limits} lang={lang} t={t} className="span-4" />}
+                </div>
 
-                    <Card id="hourly" title={t("hourly")} className="span-4">
+                {tot.turns === 0 && status && status.turns > 0 && (
+                  <section className="sp-tile state-tile">
+                    <div className="sp-state">
+                      <span className="ico">
+                        <Icon name="inbox" />
+                      </span>
+                      <p>{t("empty")}</p>
+                    </div>
+                  </section>
+                )}
+
+                {tot.turns > 0 && (
+                  <>
+                    <SectionHead title={t("sec.breakdown")} sub={t("sec.breakdownSub")} />
+                    <div className="board">
+                      <Tabs
+                        id="breakdown"
+                        label={t("sec.breakdown")}
+                        className="span-8"
+                        tabs={[
+                          {
+                            key: "projects",
+                            label: t("byProject"),
+                            body: (
+                              <>
+                      {projects.length ? (
+                        <HBars
+                          rows={projects.slice(0, 10).map((p) => ({
+                            key: `${p.machine}/${p.project}`,
+                            label: (
+                              <>
+                                {machineChip(p.machine)}
+                                {p.project}
+                              </>
+                            ),
+                            value: p.tokens,
+                            title: `${fmtCost(p.cost, lang)} · ${p.sessions} ${t("sessions").toLowerCase()}`,
+                          }))}
+                          fmt={fmtTokens}
+                        />
+                      ) : (
+                        <p className="note">{t("noMatch", { q })}</p>
+                      )}
+                              </>
+                            ),
+                          },
+                          ...(multiMachine
+                            ? [
+                                {
+                                  key: "machines",
+                                  label: t("byMachine"),
+                                  body: (
+                        <HBars rows={summary.byMachine.map((m) => ({ key: m.machine, label: m.machine, value: m.tokens, title: `${fmtCost(m.cost, lang)} · ${m.sessions} ${t("sessions").toLowerCase()}` }))} fmt={fmtTokens} />
+                                  ),
+                                },
+                              ]
+                            : []),
+                          {
+                            key: "subagents",
+                            label: t("subagents"),
+                            body: <>{subagentRows.length ? <HBars rows={subagentRows} fmt={fmtTokens} /> : <p className="note">{t("noSubagents")}</p>}</>,
+                          },
+                        ]}
+                      />
+                      <Card id="hourly" title={t("hourly")} className="span-4">
                       <HourBars
                         hours={summary.hourly.map((h) => ({ hour: h.hour, value: h.avgTokens }))}
                         fmt={fmtTokens}
@@ -763,9 +818,19 @@ export default function App() {
                         )}
                       />
                       <p className="card-foot">{t("hourlyHint", { n: summary.hourlyDays })}</p>
-                    </Card>
+                      </Card>
+                    </div>
 
-                    <Card id="cost-model" title={t("byModel")}>
+                    <SectionHead title={t("sec.details")} sub={t("sec.detailsSub")} />
+                    <Tabs
+                      id="details"
+                      label={t("sec.details")}
+                      tabs={[
+                        {
+                          key: "models",
+                          label: t("tab.models"),
+                          title: t("byModel"),
+                          body: (
                       <div className="tbl-wrap">
                         <table className="sp-table data">
                           <thead>
@@ -810,39 +875,14 @@ export default function App() {
                           </tfoot>
                         </table>
                       </div>
-                    </Card>
-
-                    <Card id="projects" title={t("byProject")} className={multiMachine ? "span-4" : "span-6"}>
-                      {projects.length ? (
-                        <HBars
-                          rows={projects.slice(0, 10).map((p) => ({
-                            key: `${p.machine}/${p.project}`,
-                            label: (
-                              <>
-                                {machineChip(p.machine)}
-                                {p.project}
-                              </>
-                            ),
-                            value: p.tokens,
-                            title: `${fmtCost(p.cost, lang)} · ${p.sessions} ${t("sessions").toLowerCase()}`,
-                          }))}
-                          fmt={fmtTokens}
-                        />
-                      ) : (
-                        <p className="note">{t("noMatch", { q })}</p>
-                      )}
-                    </Card>
-
-                    {multiMachine && (
-                      <Card id="machines" title={t("byMachine")} className="span-4">
-                        <HBars rows={summary.byMachine.map((m) => ({ key: m.machine, label: m.machine, value: m.tokens, title: `${fmtCost(m.cost, lang)} · ${m.sessions} ${t("sessions").toLowerCase()}` }))} fmt={fmtTokens} />
-                      </Card>
-                    )}
-                    <Card id="subagents" title={t("subagents")} className={multiMachine ? "span-4" : "span-6"}>
-                      {subagentRows.length ? <HBars rows={subagentRows} fmt={fmtTokens} /> : <p className="note">{t("noSubagents")}</p>}
-                    </Card>
-
-                    <Card id="sessions" title={t("sessionsTable")}>
+                          ),
+                        },
+                        {
+                          key: "sessions",
+                          label: t("tab.sessions"),
+                          title: t("sessionsTable"),
+                          n: sessions.length,
+                          body: (
                       <div className="tbl-wrap">
                         <table className="sp-table data">
                           <thead>
@@ -894,10 +934,16 @@ export default function App() {
                           />
                         </table>
                       </div>
-                    </Card>
-
-                    {summary.dispatches.length > 0 && (
-                      <Card id="dispatches" title={t("dispatches")} hint={fmtInt(summary.dispatches.length, lang)}>
+                          ),
+                        },
+                        ...(summary.dispatches.length > 0
+                          ? [
+                              {
+                                key: "dispatches",
+                                label: t("tab.dispatches"),
+                                title: t("dispatches"),
+                                n: dispatches.length,
+                                body: (
                         <div className="tbl-wrap">
                           <table className="sp-table data">
                             <thead>
@@ -946,10 +992,16 @@ export default function App() {
                             />
                           </table>
                         </div>
-                      </Card>
-                    )}
-
-                    <Card id="cost-project" title={t("projectsTable")}>
+                                ),
+                              },
+                            ]
+                          : []),
+                        {
+                          key: "projects",
+                          label: t("tab.projects"),
+                          title: t("projectsTable"),
+                          n: projects.length,
+                          body: (
                       <div className="tbl-wrap">
                         <table className="sp-table data">
                           <thead>
@@ -986,9 +1038,14 @@ export default function App() {
                           />
                         </table>
                       </div>
-                    </Card>
-
-                    <Card id="cost-branch" title={t("branchesTable")}>
+                          ),
+                        },
+                        {
+                          key: "branches",
+                          label: t("tab.branches"),
+                          title: t("branchesTable"),
+                          n: branches.length,
+                          body: (
                       <div className="tbl-wrap">
                         <table className="sp-table data">
                           <thead>
@@ -1025,18 +1082,47 @@ export default function App() {
                           />
                         </table>
                       </div>
-                    </Card>
-                  </div>
+                          ),
+                        },
+                      ]}
+                    />
+                  </>
                 )}
               </>
             )}
 
-            <p className="foot">{t("footer", { asOf: status?.pricingAsOf ?? "" })}</p>
+            {limits && limits.length === 0 && <LimitsCard snaps={limits} lang={lang} t={t} />}
+
+            <footer className="foot">
+              {status && (
+                <div className="foot-status">
+                  <span title={status.sources.join("\n")}>
+                    {status.machine} · {t("files", { n: status.files })}
+                  </span>
+                  {status.shared && (
+                    <span title={`${status.shared.url}\n${t("sharedHint")}`}>{t("shared", { ago: status.shared.lastSyncAt ? relTime(status.shared.lastSyncAt, lang) : t("never") })}</span>
+                  )}
+                  {(status.shared?.machines ?? []).map((m) => (
+                    <span key={m.name} className="peer" title={m.ok ? t("machineOk", { name: m.name, ago: m.updatedAt ? relTime(m.updatedAt, lang) : t("never") }) : t("peerDown", { name: m.name, error: m.error ?? "" })}>
+                      <i className={`sp-dot ${m.ok ? "ok" : "bad"}`} />
+                      {m.name}
+                    </span>
+                  ))}
+                  {status.peers.map((p) => (
+                    <span key={p.name} className="peer" title={p.ok ? t("peerOk", { name: p.name, ago: p.lastPullAt ? relTime(p.lastPullAt, lang) : t("never") }) : t("peerDown", { name: p.name, error: p.error ?? "" })}>
+                      <i className={`sp-dot ${p.ok ? "ok" : "bad"}`} />
+                      {p.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p>{t("footer", { asOf: status?.pricingAsOf ?? "" })}</p>
+            </footer>
           </main>
         </div>
       </div>
       <div className="sp-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
       <Tooltip tip={tip} />
-    </CardCtx.Provider>
+    </>
   );
 }

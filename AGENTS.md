@@ -46,7 +46,7 @@ src/space-pricing.ts   versioned ai-space GPT pricing client, validation and per
 src/testing-pricing.ts synthetic GPT catalogue used only by tests
 src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*, DSH_HOME)
 web/index.html         theme and language before first paint, the kit's layer order, the /_space/* loaders
-web/App.tsx          * the page: filter column (a drawer below 960 px), filters in the URL, collapsed cards, language and theme in localStorage, 60 s refresh
+web/App.tsx          * the page: filter column (a drawer below 960 px), then three levels (cost tile with the daily chart beside plan limits; Breakdown; Details, the tables one tab at a time); filters in the URL, open tabs, language and theme in localStorage, 60 s refresh
 web/charts.tsx         inline-SVG charts (stacked daily bars with average and today, hourly bars, ranked bars), tooltip, legend
 web/api.ts             the JSON types as the page sees them, formatting helpers
 web/i18n.ts            English and Chinese; every visible string goes through t()
