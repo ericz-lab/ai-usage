@@ -87,7 +87,7 @@ export function StackedBars({
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = Math.max(1, days.length);
-  const pad = { l: 44, r: 8, t: 10 };
+  const pad = { l: 56, r: 8, t: 10 };
   const w = Math.max(0, width - pad.l - pad.r);
   const slot = w / n;
   // Two-line labels (day, then its total) when a day has room for them.

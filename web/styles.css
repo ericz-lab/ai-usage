@@ -1,7 +1,8 @@
 /*
  * AI Usage: only what is specific to this app, on the Space Tiles kit (web/kit.css, then the space's
  * /_space/ui.css; ai-space docs/ui-kit.md). Tokens and sp- classes come from the kit; this file adds the
- * chart series, the chart geometry, the tables' columns and their stacked phone form, and the tooltip.
+ * chart series, the page's three levels (the cost tile, section headings, tabbed tiles), the chart
+ * geometry, the tables' columns and their stacked phone form, and the tooltip.
  */
 
 /* Layers: the kit copy, then the space's /_space/ui.css (added by the page at runtime), then this app. */
@@ -67,15 +68,15 @@
 .sp-head { padding:6px 4px 2px }
 .head-title { display:flex;flex-direction:column;gap:4px;min-width:0 }
 .head-sub { display:flex;flex-wrap:wrap;align-items:center;gap:2px 14px;color:var(--muted) }
-.head-status { display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;font-size:12px;color:var(--muted) }
+.head-status,.foot-status { display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;font-size:12px;color:var(--muted) }
 .peer { display:inline-flex;align-items:center;gap:5px }
 .scanned { font-size:12px;color:var(--muted) }
 .sp-mbar .sp-icon-btn.spin .ic,.sp-btn.spin .ic { animation:spin 1s linear infinite }
 @keyframes spin { to { transform:rotate(360deg) } }
 
-/* ---- the board: tiles on a 12-column grid that collapses when the work column is narrow */
+/* ---- the board: tiles on a 12-column grid that collapses when the work column is narrow; tiles in a row share its height */
 .sp-center { container-type:inline-size }
-.board { display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;align-items:start }
+.board { display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;align-items:stretch }
 .board > * { grid-column:span 12;min-width:0 }
 .board > .span-8 { grid-column:span 8 }
 .board > .span-6 { grid-column:span 6 }
@@ -84,25 +85,36 @@
   .board > .span-8,.board > .span-6,.board > .span-4 { grid-column:span 12 }
 }
 
-/* a tile with a title, a hint, a collapse button */
-.card { padding:16px 20px 20px }
-.card-head { display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;min-height:32px;margin:-4px -8px 8px 0 }
+/* a tile with a title and a hint */
+.card { padding:20px 24px 24px }
+.card-head { display:flex;align-items:baseline;gap:8px 12px;flex-wrap:wrap;margin-bottom:16px }
 .card-head .hint { font-size:12px;color:var(--muted) }
-.card-head .spacer { flex:1 }
-.card-head .caret .ic { transition:transform .15s ease-out }
-.card.closed .card-head { margin-bottom:-4px }
-.card.closed .caret .ic { transform:rotate(-90deg) }
 .note { color:var(--muted);padding:4px 0 }
 
-/* ---- figures */
-.figs { display:grid;grid-template-columns:1.1fr 1.3fr 1fr 1fr 1fr;gap:16px 24px;align-items:end;padding:8px 8px 4px }
-.fig { display:flex;flex-direction:column;gap:6px;min-width:0 }
-.fig .sp-fig { white-space:nowrap }
-.fig .sp-unit { white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
-@container (max-width: 760px) {
-  .figs { grid-template-columns:repeat(2,minmax(0,1fr));row-gap:20px;align-items:start }
-  .figs .fig.cost { grid-column:span 2;order:-1 }
-}
+/* ---- level one: the window's cost, the figures that explain it, the days under them */
+.hero { padding:28px 32px 24px }
+.hero-top { display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:24px 48px }
+.hero-main { display:flex;flex-direction:column;gap:10px;min-width:0 }
+.hero-main .sp-fig { white-space:nowrap }
+.stats { display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px 40px;margin:0 }
+.stat { display:flex;flex-direction:column;gap:4px;min-width:64px }
+.stat dt { font-size:12px;color:var(--muted) }
+.stat dd { margin:0;font-size:20px;line-height:1.2;color:var(--ink);white-space:nowrap }
+.stat dd.sub { font-size:12px;line-height:1.5;color:var(--muted) }
+.hero-chart { margin-top:28px;padding-top:20px;border-top:1px solid var(--line) }
+
+/* ---- level two and three open with a heading on the canvas */
+.sec-head { display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;padding:28px 4px 2px }
+.sec-head h2 { font-size:20px;line-height:1.3 }
+.sec-head p { color:var(--muted) }
+
+/* a tile that shows one view at a time */
+.tabs { display:flex;gap:4px;margin:-4px -8px 16px;overflow-x:auto;scrollbar-width:none }
+.tabs::-webkit-scrollbar { display:none }
+.tabs button { display:inline-flex;align-items:center;gap:6px;flex:none;height:32px;padding:0 12px;border:0;border-radius:var(--r-pill);background:var(--clear);color:var(--muted);white-space:nowrap }
+.tabs button:hover { color:var(--ink) }
+.tabs button[aria-selected="true"] { background:var(--pill);color:var(--ink);font-weight:500 }
+.tabs .n { font-size:12px;font-weight:400;color:var(--muted) }
 
 /* ---- plan limits: one block per account, thin meters */
 .lim + .lim { margin-top:18px;padding-top:14px;border-top:1px solid var(--line) }
@@ -110,13 +122,13 @@
 .lim-head b { color:var(--ink);font-weight:500;font-size:15px;margin-right:8px }
 .meters { display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px 28px }
 .meter { display:flex;flex-direction:column;gap:6px;min-width:0 }
-.m-top { display:flex;justify-content:space-between;align-items:baseline;gap:8px;color:var(--ink) }
-.m-top > span:first-child { min-width:0;overflow-wrap:anywhere }
-.m-val { display:flex;align-items:baseline;gap:6px;white-space:nowrap }
-.lvl { font-size:12px;font-weight:500;color:var(--warn-tx) }
-.meter.bad .lvl { color:var(--bad-tx) }
+.m-top { display:flex;justify-content:space-between;align-items:baseline;gap:12px;color:var(--ink) }
+.m-name { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+.m-val { flex:none;white-space:nowrap }
 .meter .sp-meter { flex:none;height:4px }
-.m-sub { font-size:12px;color:var(--muted) }
+.m-sub { display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:12px;color:var(--muted) }
+.lvl { flex:none;font-weight:500;color:var(--warn-tx) }
+.meter.bad .lvl { color:var(--bad-tx) }
 
 /* ---- charts */
 .chart-box { width:100% }
@@ -145,7 +157,7 @@
 .card-foot { margin-top:10px;font-size:12px;color:var(--muted) }
 
 /* ranked bars: label and value, a thin track under them; several columns when the tile is wide */
-.rank { display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px 32px;padding:0;list-style:none }
+.rank { display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px 40px;padding:0;list-style:none }
 .rank li { display:flex;flex-direction:column;gap:6px;min-width:0 }
 .rank-top { display:flex;justify-content:space-between;align-items:baseline;gap:12px }
 .rank-label { min-width:0;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
@@ -205,11 +217,9 @@
 }
 
 /* ---- states */
-.sk-figs { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:24px;padding:8px }
-.sk-figs > div { display:flex;flex-direction:column;gap:10px }
 .sk-tile { display:flex;flex-direction:column;gap:14px }
 .sp-sk { animation:fade 1.2s ease-in-out infinite alternate }
-.sp-sk.fig { height:28px;width:70% }
+.sp-sk.fig { height:40px;width:36% }
 .sp-sk.plot { height:180px;border-radius:var(--r-well) }
 @keyframes fade { to { opacity:.45 } }
 .state-tile .sp-state { padding:40px 24px }
@@ -217,7 +227,7 @@
 .sp-banner .ic { margin-top:3px }
 .sp-banner.bad .ic { color:var(--bad-tx) }
 .sp-banner .sp-btn { margin:-4px -4px -4px 0 }
-.foot { padding:4px 8px 8px;font-size:12px;line-height:1.6;color:var(--muted) }
+.foot { display:flex;flex-direction:column;gap:6px;padding:20px 8px 8px;font-size:12px;line-height:1.6;color:var(--muted) }
 
 /* The kit hides the drawer close button before it styles .sp-icon-btn; when the space serves an older
    kit those later rules show it at every width, so put the intended visibility back. */
@@ -226,14 +236,17 @@
 
 /* ---- phone */
 @media (max-width: 759px) {
-  .card { padding:14px 16px 16px }
+  .card { padding:16px }
+  .hero { padding:20px 16px 16px }
+  .stats { gap:16px 28px }
+  .sec-head { padding-top:20px }
+  .tabs button { height:40px }
   .mcheck { min-height:44px }
   .mcheck .sp-check { width:28px;height:28px }
   .range-seg button { height:40px }
   .reset { height:32px;padding:0 10px }
   .hours { height:140px }
   .hours-axis span:nth-child(3n+1):nth-child(even) { visibility:hidden }
-  .sk-figs { grid-template-columns:repeat(2,minmax(0,1fr)) }
   .sp-sk.plot { height:140px }
 }
 }

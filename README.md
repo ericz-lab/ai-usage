@@ -19,7 +19,7 @@ The idea and the transcript format notes come from [phuryn/claude-usage](https:/
 - **Plan usage limits**: Claude and Codex subscription usage, with session/weekly percentages and reset times. Codex also shows model-specific windows when supplied by the API. Each provider refreshes every five minutes; shared storage keeps the newest reading per provider/account.
 - **Tiles**: tokens (with the subagents' share), estimated cost, sessions, turns, per-day average.
 - **Charts**: daily usage stacked by model, hourly distribution (average per active day), by model, by machine, top projects, subagents by type. Every mark has a tooltip.
-- **Tables**: cost by model with the four token kinds, sessions (project, topic, model, last active, duration, turns, tokens, cost), subagent dispatches, cost by project, cost by project and branch. Sortable, collapsible, the long ones fold.
+- **Tables**: cost by model with the four token kinds, sessions (project, topic, model, last active, duration, turns, tokens, cost), subagent dispatches, cost by project, cost by project and branch. Sortable, one table at a time behind tabs, the long ones fold.
 - **Widget**: an ai-space panel card with today, the last seven days, the top model and the plan limits.
 - English and Chinese (`?lang=`), light and dark (`?theme=`, else the OS setting).
 
