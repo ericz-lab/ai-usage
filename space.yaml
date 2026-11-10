@@ -5,7 +5,7 @@ spec: 1
 name: ai-usage
 title: AI Usage
 description: What Claude Code, Codex and DeepSeek Harness spent on this machine and its peers, read from each tool's own session logs. Tokens, cost estimates, models, projects, sessions and subagents.
-icon: icon.svg
+icon: icon.png
 # The page. On a laptop the loopback address works as is; on a server set
 # SPACE_APP_URL_AI_USAGE=https://usage.example.com in the workspace .env to
 # point the tile at the public hostname instead.
