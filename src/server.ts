@@ -305,7 +305,7 @@ export function createApp(opts: ServerOptions) {
     return { routes, scan, refresh, status };
   }
   if (opts.page) routes["/"] = opts.page;
-  routes["/icon.svg"] = () => new Response(Bun.file(new URL("../icon.svg", import.meta.url)), { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
+  routes["/icon.png"] = () => new Response(Bun.file(new URL("../icon.png", import.meta.url)), { headers: { "content-type": "image/png", "cache-control": "public, max-age=86400" } });
 
   return { routes, scan, refresh, status };
 }

@@ -36,7 +36,7 @@ src/codex-scanner.ts   Codex session metadata, token_count deltas and saved pars
 src/deepseek-scanner.ts DeepSeek Harness zstd/JSONL session logs -> turns and topics
 src/store.ts         * bun:sqlite schema, upserts, the queries stats needs, export/import for peers
 src/stats.ts         * summary(): one window, one model and machine filter, one time zone -> everything the page shows
-src/server.ts        * routes: /api/summary, /api/status, /api/refresh, /api/export, /api/limits, /api/widget, /healthz, /icon.svg
+src/server.ts        * routes: /api/summary, /api/status, /api/refresh, /api/export, /api/limits, /api/widget, /healthz, /icon.png
 src/shared.ts        * the shared store: object-store interface (S3 and in-memory), publish, pull
 src/limits.ts          plan usage limits: read the CLI's login, fetch /api/oauth/usage, publish and merge snapshots
 src/codex-limits.ts    native Codex login and subscription-window parsing
@@ -56,7 +56,7 @@ deploy/app.service     user-level systemd unit template (@DIR@ substituted)
 deploy/app.plist       macOS launchd agent template (@DIR@, @BUN@ substituted)
 deploy/install.sh      dependencies, unit or agent, start, health check; what ai-space runs after cloning
 deploy/post-receive    bare-repository hook for git-push deploys
-icon.svg               panel icon, 64x64 viewBox
+icon.png               panel icon, 256x256, full-bleed square (the panel rounds it)
 .env.example           every variable the service reads
 ```
 
