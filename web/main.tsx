@@ -1,9 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
-import "./styles.css";
 
-// `?theme=light|dark` (ai-space passes the viewer's theme to embedded pages) beats the OS setting.
-const theme = new URLSearchParams(location.search).get("theme");
-if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
-
+// Theme and language are applied before first paint by the inline script in index.html
+// (`?theme=` / `?lang=`, then the saved choice, then the system); the stylesheet is linked there.
 createRoot(document.getElementById("root")!).render(<App />);
