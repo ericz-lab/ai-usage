@@ -46,6 +46,8 @@
 
 /* ---- the left column: brand, search, range, machines, models, language and theme */
 .sp-logo .ic { stroke-width:2 }
+.sp-logo-img { background:none;overflow:hidden }
+.sp-logo-img img { display:block;width:32px;height:32px }
 .side-search { margin-top:4px }
 .range-seg { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:var(--r-well);width:100% }
 .range-seg button { padding:0 4px;border-radius:var(--r-mark);font-size:12px }

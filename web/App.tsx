@@ -460,8 +460,8 @@ export default function App() {
       <div className="sp-app">
         <nav className="sp-tile sp-side" id="side" aria-label={t("navAria")}>
           <div className="sp-brand">
-            <span className="sp-logo" aria-hidden="true">
-              <Icon name="bars" />
+            <span className="sp-logo sp-logo-img" aria-hidden="true">
+              <img src="/icon.png" alt="" width={32} height={32} />
             </span>
             <span className="sp-brand-txt">
               <strong>{t("title")}</strong>
