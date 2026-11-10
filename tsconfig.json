@@ -16,5 +16,5 @@
     "noUncheckedIndexedAccess": true,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["src", "web"]
+  "include": ["src", "web", "scripts"]
 }

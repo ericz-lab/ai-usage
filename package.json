@@ -11,6 +11,7 @@
     "scan": "bun src/index.ts scan",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "pack": "bun scripts/pack.ts",
     "check": "bun install && bun run typecheck && bun test"
   },
   "dependencies": {
@@ -22,5 +23,28 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "typescript": "^5.9.0"
+  },
+  "spacePackage": {
+    "include": [
+      "src",
+      "web",
+      "icon.png",
+      "package.json",
+      "tsconfig.json",
+      "node_modules/react",
+      "node_modules/react-dom",
+      "node_modules/scheduler"
+    ],
+    "mode": "background",
+    "offline": {
+      "features": [
+        "This machine's usage, read from its own session logs",
+        "Charts, sessions, search and export"
+      ],
+      "online": [
+        "Other machines' usage through the shared store",
+        "Codex plan limits"
+      ]
+    }
   }
 }
