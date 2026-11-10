@@ -9,7 +9,7 @@ icon: icon.svg
 # The page. On a laptop the loopback address works as is; on a server set
 # SPACE_APP_URL_AI_USAGE=https://usage.example.com in the workspace .env to
 # point the tile at the public hostname instead.
-url: http://127.0.0.1:8880/?lang={lang}
+url: http://127.0.0.1:8880/?lang={lang}&accent={accent}
 status: active
 repo: https://github.com/ericz-lab/ai-usage.git
 i18n:

@@ -70,7 +70,7 @@ Environment (`.env.example` lists everything): `PORT`, `DATABASE_URL` or `SPACE_
 
 ## Inside ai-space
 
-`space.yaml` declares the service (port 8880, `/healthz`), the widget, a SQLite database and the shared store (`blobs: { backend: s3, fallback: file }`). ai-space installs it as a default app on `init`: clone into `~/.ai-space/apps/ai-usage`, then `deploy/install.sh` (dependencies, a user-level systemd unit, start). On a machine with a hostname, set `SPACE_APP_URL_AI_USAGE=https://usage.<domain>/?lang={lang}` in the workspace `.env` so the panel tile opens the public address; the manifest itself names loopback, which is right on a laptop. Git-push deploys work like any other app with `deploy/post-receive`.
+`space.yaml` declares the service (port 8880, `/healthz`), the widget, a SQLite database and the shared store (`blobs: { backend: s3, fallback: file }`). ai-space installs it as a default app on `init`: clone into `~/.ai-space/apps/ai-usage`, then `deploy/install.sh` (dependencies, a user-level systemd unit, start). On a machine with a hostname, set `SPACE_APP_URL_AI_USAGE=https://usage.<domain>` (an override without a query keeps the manifest's `?lang={lang}&accent={accent}`) in the workspace `.env` so the panel tile opens the public address; the manifest itself names loopback, which is right on a laptop. Git-push deploys work like any other app with `deploy/post-receive`.
 
 ## API
 
