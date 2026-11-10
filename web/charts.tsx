@@ -95,7 +95,8 @@ export function StackedBars({
   const bottom = rich ? 40 : 22;
   const h = height - pad.t - bottom;
   const max = Math.max(1, ...days.map((d) => d.total), avg ?? 0);
-  const bw = Math.max(1, Math.min(18, slot * 0.56));
+  // Bars widen with their slot so a short range (7 days) is not a row of hairlines.
+  const bw = Math.max(1, Math.min(40, slot * 0.56));
   const ticks = niceTicks(max, 4);
   // Label every k-th day so labels never collide (about 56px each).
   const every = Math.max(1, Math.ceil(56 / Math.max(slot, 1)));
