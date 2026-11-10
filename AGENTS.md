@@ -56,7 +56,7 @@ deploy/app.service     user-level systemd unit template (@DIR@ substituted)
 deploy/app.plist       macOS launchd agent template (@DIR@, @BUN@ substituted)
 deploy/install.sh      dependencies, unit or agent, start, health check; what ai-space runs after cloning
 deploy/post-receive    bare-repository hook for git-push deploys
-icon.png               panel icon, 256x256, full-bleed square (the panel rounds it)
+icon.png               panel icon, 256x256, rounded square on a transparent ground
 .env.example           every variable the service reads
 ```
 
