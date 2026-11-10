@@ -45,11 +45,13 @@ src/pricing.ts         Claude and DeepSeek rates, catalogue-based GPT costOf, sh
 src/space-pricing.ts   versioned ai-space GPT pricing client, validation and persistent cache
 src/testing-pricing.ts synthetic GPT catalogue used only by tests
 src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*, DSH_HOME)
-web/App.tsx          * the page: filters in the URL, collapsed cards in localStorage, 60 s refresh
-web/charts.tsx         inline-SVG charts (stacked daily bars, hourly bars, horizontal bars), tooltip, legend
+web/index.html         theme and language before first paint, the kit's layer order, the /_space/* loaders
+web/App.tsx          * the page: filter column (a drawer below 960 px), filters in the URL, collapsed cards, language and theme in localStorage, 60 s refresh
+web/charts.tsx         inline-SVG charts (stacked daily bars with average and today, hourly bars, ranked bars), tooltip, legend
 web/api.ts             the JSON types as the page sees them, formatting helpers
 web/i18n.ts            English and Chinese; every visible string goes through t()
-web/styles.css         tokens for both themes; series colours are the eight validated categorical slots
+web/kit.css            copy of ai-space's Space Tiles kit (src/web/ui-kit/kit.css); never edit, re-copy it
+web/styles.css         this app's rules in layer `app` on the kit's tokens: series slots, chart geometry, table columns and their stacked phone form, tooltip
 deploy/app.service     user-level systemd unit template (@DIR@ substituted)
 deploy/app.plist       macOS launchd agent template (@DIR@, @BUN@ substituted)
 deploy/install.sh      dependencies, unit or agent, start, health check; what ai-space runs after cloning
@@ -65,6 +67,8 @@ icon.svg               panel icon, 64x64 viewBox
 - Shared-store contract: a machine's directory is its name; `manifest.json` lists `files: { path: { hash, rows } }`; hashes are `Bun.hash` of the file text. A reader skips a file whose hash it already imported. Only this machine's own rows are published, never rows pulled from others.
 - Export contract: `GET /api/export?since=<ms>` -> `{ ok, machine, sessions, turns, agents }` with the store's row shapes; only rows scanned here (`machine = ''`), never rows pulled from elsewhere, so a chain of hubs cannot double count.
 - Series colours: a model's slot is its index in the all-time model list (`summary.models`), not in the filtered one, so filtering never repaints. Past eight slots everything folds into "other".
+- The page is Space Tiles (ai-space `docs/ui-kit.md`): `web/kit.css` in layer `kit`, the space's `/_space/ui.css` in layer `space` (added by the head script), `web/styles.css` in layer `app`. The kit's accent marks only the tile-title square, today in the daily chart, focus and the selected item; it never colours a series, a button or a checkbox. No ink button on this screen.
+- Series slots (`--s1`…`--s8`, `--s-other` in `web/styles.css`): the kit's ink, mid grey and amber, then steel blue, deep teal (sky in dark), plum (mauve), olive (sage), oxblood (brick), and a pale grey for "other". Light and dark are separate steps, each checked as a set against its tile surface with the dataviz palette validator (Machado 2009 protan/deutan simulation, OKLab ΔE×100): all pairs ≥ 8.6 under protan/deutan in both themes; unsimulated, all pairs ≥ 15 in light, adjacent slots ≥ 15 and all pairs ≥ 14.6 in dark. Ink and grey are neutral by the kit's rule, so the validator's lightness-band and chroma checks fail for them by design. Re-run the validator if a slot changes.
 - English in code, comments, docs and commits; the page is bilingual. Commit messages follow Conventional Commits.
 
 ## Commands
