@@ -1,6 +1,7 @@
 /**
  * The page's two languages. Picked from `?lang=` (ai-space passes the panel's
- * language through the manifest's `{lang}`), else the browser's. Every
+ * language through the manifest's `{lang}`), else the choice saved by the
+ * language control, else the browser's. Every
  * user-visible string goes through `t`.
  */
 
@@ -108,6 +109,30 @@ const EN = {
   resetsIn: "Resets in {in}",
   resetsAt: "Resets {at}",
   resetDone: "Reset since the last reading",
+  brandAlt: "AI 用量",
+  search: "Search projects or sessions",
+  searchPh: "Search projects…",
+  noMatch: "Nothing matches \u201c{q}\u201d.",
+  clear: "Clear",
+  navAria: "Filters",
+  navOpen: "Open filters",
+  navClose: "Close filters",
+  langAria: "Language",
+  themeSystem: "Theme: system, press to change",
+  themeLight: "Theme: light, press to change",
+  themeDark: "Theme: dark, press to change",
+  collapse: "Collapse",
+  expand: "Expand",
+  retry: "Retry",
+  "head.5h": "Last 5 hours",
+  "head.today": "Today",
+  "head.7d": "Last 7 days",
+  "head.30d": "Last 30 days",
+  "head.90d": "Last 90 days",
+  "head.all": "All time",
+  avg: "avg {v}",
+  "limit.warn": "near the limit",
+  "limit.bad": "at the limit",
 };
 
 const ZH: Record<keyof typeof EN, string> = {
@@ -212,15 +237,49 @@ const ZH: Record<keyof typeof EN, string> = {
   resetsIn: "{in}后重置",
   resetsAt: "{at} 重置",
   resetDone: "上次读取后已重置",
+  brandAlt: "AI Usage",
+  search: "搜索项目或会话",
+  searchPh: "搜索项目或会话",
+  noMatch: "没有与\u201c{q}\u201d匹配的内容。",
+  clear: "清除",
+  navAria: "筛选",
+  navOpen: "打开筛选",
+  navClose: "关闭筛选",
+  langAria: "界面语言",
+  themeSystem: "主题：跟随系统，点按切换",
+  themeLight: "主题：浅色，点按切换",
+  themeDark: "主题：深色，点按切换",
+  collapse: "收起",
+  expand: "展开",
+  retry: "重试",
+  "head.5h": "近 5 小时",
+  "head.today": "今天",
+  "head.7d": "近 7 天",
+  "head.30d": "近 30 天",
+  "head.90d": "近 90 天",
+  "head.all": "全部时间",
+  avg: "均 {v}",
+  "limit.warn": "接近上限",
+  "limit.bad": "已到上限",
 };
 
 export type Key = keyof typeof EN;
 const DICTS: Record<Lang, Record<Key, string>> = { en: EN, zh: ZH };
 
-export function detectLang(search = typeof location !== "undefined" ? location.search : "", nav = typeof navigator !== "undefined" ? navigator.language : "en"): Lang {
+/** `?lang=`, else the saved choice, else the browser's language (index.html applies the same order before first paint). */
+export function detectLang(search = typeof location !== "undefined" ? location.search : "", nav = typeof navigator !== "undefined" ? navigator.language : "en", saved = savedLang()): Lang {
   const q = new URLSearchParams(search).get("lang") ?? "";
-  const pick = (q || nav).toLowerCase();
+  const pick = (q || saved || nav).toLowerCase();
   return pick.startsWith("zh") ? "zh" : "en";
+}
+
+export const LANG_KEY = "ai-usage.lang";
+function savedLang(): string {
+  try {
+    return typeof localStorage !== "undefined" ? (localStorage.getItem(LANG_KEY) ?? "") : "";
+  } catch {
+    return "";
+  }
 }
 
 export function translate(lang: Lang, key: Key, vars: Record<string, string | number> = {}): string {

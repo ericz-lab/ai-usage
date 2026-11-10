@@ -6,12 +6,20 @@
     <meta name="color-scheme" content="light dark" />
     <title>AI Usage</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='2' y='2' width='60' height='60' rx='14' fill='%230e1116'/%3E%3Crect x='14' y='34' width='8' height='16' rx='2' fill='%23f1f4f8'/%3E%3Crect x='28' y='22' width='8' height='28' rx='2' fill='%23f1f4f8'/%3E%3Crect x='42' y='14' width='8' height='36' rx='2' fill='%23f1f4f8'/%3E%3C/svg%3E" />
+    <!-- theme and language before first paint (ai-space docs/app-spec.md, App pages): ?theme= / ?lang= -> saved choice -> system -->
+    <script>(function(){var d=document.documentElement;var q=new URLSearchParams(location.search);var get=function(k){try{return localStorage.getItem(k)}catch(e){return null}};var t=q.get("theme");if(t!=="light"&&t!=="dark")t=get("ai-usage.theme");if(t==="light"||t==="dark")d.dataset.theme=t;d.dataset.mode=t==="light"||t==="dark"?t:"system";var l=q.get("lang")||get("ai-usage.lang")||navigator.language||"en";d.lang=/^zh/i.test(l)?"zh-CN":"en";})()</script>
+    <!-- Space Tiles (ai-space docs/ui-kit.md): this app's copy of the kit, then the space's current /_space/ui.css, then this app's own rules.
+         Bun's HTML bundler moves and merges the stylesheets, so the order is set with cascade layers rather than link order:
+         styles.css imports the copy into layer kit and keeps its own rules in layer app; the space's version goes into layer space,
+         added at runtime so the bundler leaves the path alone (a 404 on an older ai-space or on the app's own port is ignored). -->
+    <script>(function(){var s=document.createElement("style");s.textContent='@layer kit, space, app;@import url("/_space/ui.css") layer(space);';document.head.appendChild(s)})()</script>
     <link rel="stylesheet" href="./styles.css" />
+    <!-- ai-space usage heartbeat (docs/usage.md) and feedback button (docs/feedback.md); added at runtime so the bundler leaves them alone -->
+    <script>(function(){var s=document.createElement("script");s.src="/_space/usage.js";s.defer=true;document.head.appendChild(s)})()</script>
+    <script>(function(){var s=document.createElement("script");s.src="/_space/feedback.js";s.defer=true;document.head.appendChild(s)})()</script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="./main.tsx"></script>
-  <script>(function(){var s=document.createElement("script");s.src="/_space/usage.js";s.defer=true;document.head.appendChild(s)})()</script>
-  <script>(function(){var s=document.createElement("script");s.src="/_space/feedback.js";s.defer=true;document.head.appendChild(s)})()</script>
-</body>
+  </body>
 </html>
