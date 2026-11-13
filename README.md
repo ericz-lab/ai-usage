@@ -10,6 +10,8 @@ DeepSeek Harness history comes from `~/.dsh/sessions` (or `$DSH_HOME/sessions`):
 
 It is an [ai-space](https://github.com/ericz-lab/ai-space) app and ships with it as a default app: a fresh space installs it on `init`. It also runs on its own with `bun src/index.ts`.
 
+> **Works best with [ai-space](https://github.com/ericz-lab/ai-space) · 配合 ai-space 使用效果更佳.** On its own it is a complete dashboard for one machine. In a space it also gets the panel widget, the shared bucket and credentials for multi-machine sync without any configuration, GPT prices from the space's catalogue, and the usage of the space's own Codex tasks.
+
 The idea and the transcript format notes come from [phuryn/claude-usage](https://github.com/phuryn/claude-usage), which does the same for one machine in Python. ai-usage adds the multi-machine part and the ai-space integration.
 
 ## What it shows
