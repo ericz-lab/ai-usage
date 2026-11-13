@@ -1,4 +1,4 @@
-import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type LimitsReply, type LimitsSnapshot, type Status, type Summary, type Totals, dateTime, fmtCost, fmtCostFloor, fmtInt, fmtMinutes, fmtTokens, getJson, planName, postJson, relTime, shortDay } from "./api.ts";
 import { HBars, HourBars, Legend, SLOTS, type StackDay, StackedBars, Tooltip, type Tip, seriesVar } from "./charts.tsx";
 import { type Key, LANG_KEY, LOCALE, type Lang, detectLang, translate } from "./i18n.ts";
@@ -15,6 +15,8 @@ const RANGES = ["5h", "today", "7d", "30d", "90d", "all"] as const;
 type Range = (typeof RANGES)[number];
 const REFRESH_MS = 60_000;
 const THEME_KEY = "ai-usage.theme";
+const FOLD_KEY = "ai-usage.side-folded";
+const STALE_PEER_MS = 30 * 60_000;
 type T = (k: Key, v?: Record<string, string | number>) => string;
 
 const store = {
@@ -83,6 +85,76 @@ function Icon({ name, className = "" }: { name: keyof typeof PATHS; className?: 
       <path d={PATHS[name]} />
       {name === "auto" && <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />}
     </svg>
+  );
+}
+
+// ---------------------------------------------------------------- the left column
+
+/** Each range row's 16px line icon; 今天's calendar carries the day of the month. */
+function RangeIcon({ range, day }: { range: Range; day: number }) {
+  const cal = (
+    <>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+      <path d="M8 3v4M16 3v4" />
+    </>
+  );
+  return (
+    <svg className="ic ni" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {range === "5h" && (
+        <>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 7.5V12l3 2" />
+        </>
+      )}
+      {range === "today" && (
+        <>
+          {cal}
+          <text x="12" y="17.6" textAnchor="middle">
+            {day}
+          </text>
+        </>
+      )}
+      {range === "7d" && (
+        <>
+          {cal}
+          <path d="M7.5 14h9" />
+        </>
+      )}
+      {range === "30d" && (
+        <>
+          {cal}
+          <path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01M8 15h.01M12 15h.01M16 15h.01" />
+        </>
+      )}
+      {range === "90d" && (
+        <>
+          <path d="M7 3.5h11.5a2 2 0 0 1 2 2V17" />
+          <rect x="3.5" y="7" width="14" height="13.5" rx="2" />
+          <path d="M3.5 11h14" />
+        </>
+      )}
+      {range === "all" && <path d="M12 12c-2-2.7-3.6-4-5.5-4a4 4 0 0 0 0 8c1.9 0 3.5-1.3 5.5-4Zm0 0c2 2.7 3.6 4 5.5 4a4 4 0 0 0 0-8c-1.9 0-3.5 1.3-5.5 4Z" />}
+    </svg>
+  );
+}
+
+/** A group of the left column that folds under its label; `act` sits at the label's end (models' reset). */
+function NavGroup({ id, label, closed, onToggle, act, children }: { id: string; label: string; closed: boolean; onToggle: () => void; act?: ReactNode; children: ReactNode }) {
+  return (
+    <div className={`sp-ngroup ng-${id}${closed ? " closed" : ""}`} data-group={id}>
+      <div className="ng-head">
+        <button type="button" className="sp-nlabel ng-toggle" id={`g-${id}`} aria-expanded={!closed} aria-controls={`ng-${id}`} onClick={onToggle}>
+          <span>{label}</span>
+          <svg className="ic chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+        {act}
+      </div>
+      <div className="ng-body" id={`ng-${id}`} inert={closed}>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -303,6 +375,23 @@ export default function App() {
   const [tip, setTip] = useState<Tip>(null);
   const [q, setQ] = useState("");
   const [navOpen, setNavOpen] = useState(false);
+  // Which groups of the left column are folded is kept in this browser.
+  const [folded, setFolded] = useState<string[]>(() => {
+    try {
+      const v: unknown = JSON.parse(store.get(FOLD_KEY) ?? "[]");
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  });
+  const fold = (g: string) =>
+    setFolded((f) => {
+      const next = f.includes(g) ? f.filter((x) => x !== g) : [...f, g];
+      store.set(FOLD_KEY, JSON.stringify(next));
+      return next;
+    });
+  const sideScroll = useRef<HTMLDivElement>(null);
+  const navInd = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
@@ -355,6 +444,46 @@ export default function App() {
       document.removeEventListener("keydown", onKey);
     };
   }, []);
+
+  /**
+   * The wash behind the selected range: one element that slides to the row chosen. It lies under the rows of the
+   * scrolling part and is placed from the row's box; machines and models (filters, not views) take none, nor does
+   * a range row in a folded group.
+   */
+  const placeInd = useCallback((slide: boolean) => {
+    const home = sideScroll.current;
+    const ind = navInd.current;
+    if (!home || !ind) return;
+    const row = home.querySelector<HTMLElement>('.ng-range .sp-nitem[aria-pressed="true"]');
+    home.querySelectorAll(".ind-on").forEach((x) => x !== row && x.classList.remove("ind-on"));
+    const box = row?.getBoundingClientRect();
+    if (!row || !box || box.height < 8 || row.closest(".sp-ngroup.closed")) {
+      row?.classList.remove("ind-on");
+      ind.classList.add("snap");
+      ind.style.opacity = "0";
+      return;
+    }
+    const at = home.getBoundingClientRect();
+    // The first placing, and one that follows a layout change (a group folding, a resize), does not slide.
+    ind.classList.toggle("snap", !slide || ind.style.opacity !== "1");
+    ind.style.width = `${box.width}px`;
+    ind.style.height = `${box.height}px`;
+    ind.style.transform = `translate(${box.left - at.left + home.scrollLeft}px, ${box.top - at.top + home.scrollTop}px)`;
+    ind.style.opacity = "1";
+    row.classList.add("ind-on");
+  }, []);
+  // After every render: a new range slides there; the same one stays put.
+  useLayoutEffect(() => placeInd(true));
+  // Rows move when a group folds, a list grows or the column is resized: the wash keeps to its row.
+  const groupsKey = `${summary?.machines.length ?? 0}/${!!summary}`;
+  useEffect(() => {
+    const home = sideScroll.current;
+    if (!home) return;
+    const watch = new ResizeObserver(() => placeInd(false));
+    watch.observe(home);
+    home.querySelectorAll(".sp-ngroup").forEach((g) => watch.observe(g));
+    return () => watch.disconnect();
+  }, [placeInd, groupsKey]);
 
   const setLang = (l: Lang) => {
     store.set(LANG_KEY, l);
@@ -466,6 +595,21 @@ export default function App() {
   const subagentRows = summary ? summary.subagents.map((s) => ({ key: s.type, label: s.type, value: s.tokens, title: `${s.dispatches} · ${fmtCost(s.cost, lang)}` })) : [];
   const downPeers = status ? [...(status.shared?.machines ?? []), ...status.peers].filter((m) => !m.ok) : [];
   const machineChip = (m: string) => (multiMachine ? <span className="tag">{m}</span> : null);
+  // A machine's dot: green when this one, or when its last publish or pull worked; red with the reason when it
+  // failed; grey when the rows held are all that is left of it: not in the shared store or among the peers, or a
+  // peer no longer pulled (pulls follow every scan, minutes apart, so half an hour without one means it left).
+  const machineState = (m: { machine: string; local: boolean }): { st: "on" | "bad" | "off"; title: string } => {
+    if (m.local) return { st: "on", title: "" };
+    const pub = status?.shared?.machines.find((x) => x.name === m.machine);
+    const peer = status?.peers.find((x) => x.name === m.machine);
+    const src = pub ?? peer;
+    if (!src) return { st: "off", title: t("machine.offHint", { name: m.machine }) };
+    if (!src.ok) return { st: "bad", title: t("peerDown", { name: m.machine, error: src.error ?? "" }) };
+    if (pub) return { st: "on", title: t("machineOk", { name: m.machine, ago: pub.updatedAt ? relTime(pub.updatedAt, lang) : t("never") }) };
+    if (!peer?.lastPullAt || Date.now() - peer.lastPullAt > STALE_PEER_MS) return { st: "off", title: t("machine.staleHint", { name: m.machine, ago: peer?.lastPullAt ? relTime(peer.lastPullAt, lang) : t("never") }) };
+    return { st: "on", title: t("peerOk", { name: m.machine, ago: peer?.lastPullAt ? relTime(peer.lastPullAt, lang) : t("never") }) };
+  };
+  const todayDay = Number(today.slice(8, 10));
 
   return (
     <>
@@ -497,52 +641,69 @@ export default function App() {
               </span>
             )}
           </div>
-          <div className="sp-side-scroll">
-            <div className="sp-ngroup">
-              <div className="sp-nlabel" id="g-range">
-                {t("range")}
-              </div>
-              <div className="sp-seg in-tile range-seg" role="group" aria-labelledby="g-range">
+          <div className="sp-side-scroll" ref={sideScroll}>
+            <div className="nav-ind snap" ref={navInd} aria-hidden="true" />
+            <NavGroup id="range" label={t("range")} closed={folded.includes("range")} onToggle={() => fold("range")}>
+              <ul aria-labelledby="g-range">
                 {RANGES.map((r) => (
-                  <button key={r} type="button" aria-pressed={r === range} onClick={() => setRange(r)}>
-                    {t(`range.${r}` as Key)}
-                  </button>
+                  <li key={r}>
+                    <button type="button" className="sp-nitem" data-range={r} aria-pressed={r === range} onClick={() => setRange(r)}>
+                      <RangeIcon range={r} day={todayDay} />
+                      <span className="nl">{t(`range.${r}` as Key)}</span>
+                    </button>
+                  </li>
                 ))}
-              </div>
-            </div>
+              </ul>
+            </NavGroup>
             {multiMachine && summary && (
-              <div className="sp-ngroup">
-                <div className="sp-nlabel" id="g-machines">
-                  {t("machines")}
-                </div>
+              <NavGroup id="machines" label={t("machines")} closed={folded.includes("machines")} onToggle={() => fold("machines")}>
                 <ul aria-labelledby="g-machines">
                   <li>
                     <button type="button" className="sp-nitem" aria-pressed={!machines.length} onClick={() => setParams((p) => ({ ...p, machines: [] }))}>
-                      <span className="nm">{t("all")}</span>
+                      <svg className="ic ni" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="m12 4 8.5 4.5L12 13 3.5 8.5Z" />
+                        <path d="m3.5 12.5 8.5 4.5 8.5-4.5" />
+                        <path d="m3.5 16.5 8.5 4.5 8.5-4.5" />
+                      </svg>
+                      <span className="nl">{t("allMachines")}</span>
                     </button>
                   </li>
-                  {summary.machines.map((m) => (
-                    <li key={m.machine}>
-                      <button type="button" className="sp-nitem" aria-pressed={machines.includes(m.machine)} onClick={() => toggleMachine(m.machine)}>
-                        <span className="nm">{m.machine}</span>
-                        {m.local && <span className="sp-nc">{t("thisMachine")}</span>}
-                      </button>
-                    </li>
-                  ))}
+                  {summary.machines.map((m) => {
+                    const { st, title } = machineState(m);
+                    return (
+                      <li key={m.machine}>
+                        <button type="button" className="sp-nitem" aria-pressed={machines.includes(m.machine)} title={title || undefined} onClick={() => toggleMachine(m.machine)}>
+                          <span className={`mdot ${st}${busy && st !== "off" ? " busy" : ""}`} role="img" aria-label={t(`machine.${st}` as Key)}>
+                            <i />
+                          </span>
+                          <span className="nl mname">
+                            <span className="nm">{m.machine}</span>
+                            {m.local && <span className="mtag">{t("thisMachine")}</span>}
+                          </span>
+                          {st === "bad" && <span className="sp-nc bad">{t("machine.badShort")}</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
-              </div>
+              </NavGroup>
             )}
-            {summary && summary.models.length > 0 && (
-              <div className="sp-ngroup">
-                <div className="sp-nlabel with-act" id="g-models">
-                  <span>{t("models")}</span>
-                  {models.length > 0 && (
+            {summary && (
+              <NavGroup
+                id="models"
+                label={t("models")}
+                closed={folded.includes("models")}
+                onToggle={() => fold("models")}
+                act={
+                  models.length > 0 && (
                     <button type="button" className="reset" onClick={() => setParams((p) => ({ ...p, models: [] }))}>
                       {t("all")}
                     </button>
-                  )}
-                </div>
+                  )
+                }
+              >
                 <ul aria-labelledby="g-models">
+                  {!summary.models.length && <li className="none">{t("noneYet")}</li>}
                   {summary.models.map((m) => {
                     const on = !models.length || models.includes(m.model);
                     const last = on && (models.length === 1 || summary.models.length === 1);
@@ -562,7 +723,7 @@ export default function App() {
                     );
                   })}
                 </ul>
-              </div>
+              </NavGroup>
             )}
           </div>
           <div className="sp-side-foot">

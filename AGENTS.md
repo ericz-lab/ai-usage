@@ -46,12 +46,12 @@ src/space-pricing.ts   versioned ai-space GPT pricing client, validation and per
 src/testing-pricing.ts synthetic GPT catalogue used only by tests
 src/config.ts          environment -> config (PORT, DATABASE_URL, USAGE_*, DSH_HOME)
 web/index.html         theme and language before first paint, the kit's layer order, the /_space/* loaders
-web/App.tsx          * the page: filter column (a drawer below 960 px), then three levels (cost tile with the daily chart beside plan limits; Breakdown; Details, the tables one tab at a time); filters in the URL, open tabs, language and theme in localStorage, 60 s refresh
+web/App.tsx          * the page: filter column (a drawer below 960 px), then three levels (cost tile with the daily chart beside plan limits; Breakdown; Details, the tables one tab at a time); filters in the URL, open tabs, folded filter groups, language and theme in localStorage, 60 s refresh
 web/charts.tsx         inline-SVG charts (stacked daily bars with average and today, hourly bars, ranked bars), tooltip, legend
 web/api.ts             the JSON types as the page sees them, formatting helpers
 web/i18n.ts            English and Chinese; every visible string goes through t()
 web/kit.css            copy of ai-space's Space Tiles kit (src/web/ui-kit/kit.css); never edit, re-copy it
-web/styles.css         this app's rules in layer `app` on the kit's tokens: series slots, chart geometry, table columns and their stacked phone form, tooltip
+web/styles.css         this app's rules in layer `app` on the kit's tokens: the left column's rows (sliding range wash, machine dots, folding), series slots, chart geometry, table columns and their stacked phone form, tooltip
 deploy/app.service     user-level systemd unit template (@DIR@ substituted)
 deploy/app.plist       macOS launchd agent template (@DIR@, @BUN@ substituted)
 deploy/install.sh      dependencies, unit or agent, start, health check; what ai-space runs after cloning
