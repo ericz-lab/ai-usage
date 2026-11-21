@@ -1,0 +1,66 @@
+# The installation package's declaration (ai-space docs/app-packages.md, docs/app-catalog.md).
+# space.yaml stays spec 1 for the git deployment; the components here (everything but spec,
+# version, requires, offline, launch and build) must equal its own: src/release.test.ts checks.
+# Release: raise `version` (and package.json's and src/server.ts's VERSION), then tag v<version>;
+# .github/workflows/release.yml builds, signs and publishes. `bun run pack` builds the same
+# packages locally.
+
+spec: 2
+name: ai-usage
+version: 0.2.0
+title: AI Usage
+description: What Claude Code, Codex and DeepSeek Harness spent on this machine and its peers, read from each tool's own session logs. Tokens, cost estimates, models, projects, sessions and subagents.
+icon: icon.png
+status: active
+repo: https://github.com/ericz-lab/ai-usage.git
+i18n:
+  zh:
+    title: AI 用量
+    description: 本机和 peer 机器上 Claude Code、Codex 和 DeepSeek Harness 的消耗，直接从各自的会话记录统计：Token、估算费用、模型、项目、会话和子智能体。
+    widgets:
+      usage: { title: AI 用量 }
+
+requires:
+  spaceApi: 1
+  bun: 1.3.0
+
+# It reads the session logs of the Space user's own CLIs (~/.claude/projects, ~/.codex, ~/.dsh,
+# or what data/ai-usage/.env names) and the Space's model ledger, read-only.
+offline:
+  features:
+    - This machine's usage, read from its own session logs
+    - Charts, sessions, search and export
+  online:
+    - Other machines' usage through the shared store
+    - Codex plan limits
+
+# The bundle `bun run build` makes; ai-space hands over PORT. Background: it scans and publishes
+# to the shared store on its own clock, not only while someone looks.
+launch:
+  kind: process
+  runtime: bun
+  entry: dist/index.js
+  mode: background
+  health: /healthz
+
+# How a checkout becomes the package: in a scratch copy, never in this tree.
+build:
+  install: bun install --frozen-lockfile
+  run: bun run build
+  include: [dist, icon.png]
+
+# Panel card: today, the last seven days, the top model.
+widgets:
+  - name: usage
+    title: AI Usage · Summary
+    kind: items
+    source: /api/widget
+    link: /
+    size: 1x1
+    refresh: 5m
+
+# The cache database (a scan rebuilds it, so no backup section) and the shared store; a Space
+# without S3 gets a file store and this instance stays local.
+storage:
+  database: sqlite
+  blobs: { backend: s3, fallback: file }

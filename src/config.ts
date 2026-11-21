@@ -32,6 +32,22 @@ export type LimitsProvider = "claude" | "codex";
 
 export const DEFAULT_PORT = 8880;
 
+/**
+ * The installation package has no `service.env` (spec 2 has no `service`), so the bundle applies
+ * the git deployment's literal values itself, under whatever the Space and `data/ai-usage/.env`
+ * hand over. They must equal space.yaml's `service.env` (src/release.test.ts checks).
+ */
+export const PACKAGE_DEFAULTS: Readonly<Record<string, string>> = {
+  NODE_ENV: "production",
+  // Claude plan limits are off for now; Codex limits still poll chatgpt.com.
+  USAGE_LIMITS: "codex",
+};
+
+/** Fill the unset variables of `env` with PACKAGE_DEFAULTS; set ones, even empty, are kept. */
+export function applyPackageDefaults(env: Record<string, string | undefined> = process.env): void {
+  for (const [key, value] of Object.entries(PACKAGE_DEFAULTS)) if (env[key] === undefined) env[key] = value;
+}
+
 /** Claude Code, its Xcode integration, and native/archived Codex sessions. */
 export function defaultSources(home = homedir(), env: Record<string, string | undefined> = process.env): string[] {
   const codex = expandHome(env.CODEX_HOME?.trim() || join(home, ".codex"), home);
