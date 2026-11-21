@@ -1,7 +1,7 @@
 import { SpacePricing } from "./space-pricing.ts";
 import { hostname } from "node:os";
 import index from "../web/index.html";
-import { loadConfig } from "./config.ts";
+import { applyPackageDefaults, loadConfig } from "./config.ts";
 import { scanDeepseekSessions } from "./deepseek-scanner.ts";
 import { Limits } from "./limits.ts";
 import { Peers, parsePeerList } from "./peers.ts";
@@ -33,6 +33,13 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 const cost = (c: number | null) => (c === null ? "n/a" : `$${c.toFixed(2)}`);
 
 async function main(): Promise<void> {
+  // The installation package runs the bundle (dist/index.js, `bun run build`): Bun finds the page's
+  // bundled files from the working directory, so run in the bundle's own, and take the git
+  // deployment's service.env as defaults (config.ts). From source nothing changes.
+  if (!Bun.main.endsWith(".ts")) {
+    process.chdir(import.meta.dir);
+    applyPackageDefaults();
+  }
   const config = loadConfig();
   const machine = process.env.USAGE_MACHINE?.trim() || process.env.SPACE_NAME?.trim() || hostname();
   const store = new Store(config.dbPath);
@@ -116,7 +123,7 @@ async function main(): Promise<void> {
   const limits = limitsFor("claude");
   const codexLimits = limitsFor("codex");
   const app = createApp({ pricing, store, config, machine, page: index, scan, peers, ...(limits ? { limits } : {}), ...(codexLimits ? { codexLimits } : {}), log, ...(shared ? { shared } : {}) });
-  const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, routes: app.routes as never, development: !!process.env.SPACE_DEV });
+  const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, routes: app.routes as never, development: !!process.env.SPACE_DEV, fetch: bundledPicture });
   log(`listening on http://127.0.0.1:${server.port} · ${machine} (${config.role}) · cache ${config.dbPath} · sources ${config.sources.join(", ")}${shared ? ` · shared store ${shared.url} every ${syncInterval} s` : peers.enabled ? " · peers on" : ""}`);
   const tick = () => app.refresh(false).catch((e) => log(`refresh failed: ${(e as Error).message}`));
   tick();
@@ -135,6 +142,19 @@ async function main(): Promise<void> {
   };
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
+}
+
+/**
+ * The bundle (`bun run build`) puts the page's pictures (the favicon) beside dist/index.js under a
+ * hashed name that Bun's page routes do not serve; from source they are routes of the page.
+ */
+async function bundledPicture(req: Request): Promise<Response> {
+  const path = new URL(req.url).pathname;
+  if (/^\/[A-Za-z0-9_-]+-[a-z0-9]{8}\.(png|svg|webp|ico|jpg)$/.test(path)) {
+    const file = Bun.file(new URL(`.${path}`, import.meta.url));
+    if (await file.exists()) return new Response(file, { headers: { "cache-control": "public, max-age=31536000, immutable" } });
+  }
+  return new Response("not found", { status: 404 });
 }
 
 main().catch((e) => {

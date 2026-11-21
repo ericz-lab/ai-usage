@@ -1,6 +1,6 @@
 {
   "name": "ai-usage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI usage dashboard for one machine: what Claude Code, Codex and DeepSeek Harness spent, read from their own session logs. An ai-space app.",
   "license": "MIT",
   "type": "module",
@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "pack": "bun scripts/pack.ts",
-    "check": "bun install && bun run typecheck && bun test"
+    "check": "bun install && bun run typecheck && bun test",
+    "build": "rm -rf dist && bun build src/index.ts --target bun --production --root . --entry-naming \"[name].[ext]\" --outdir dist"
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -23,28 +24,5 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "typescript": "^5.9.0"
-  },
-  "spacePackage": {
-    "include": [
-      "src",
-      "web",
-      "icon.png",
-      "package.json",
-      "tsconfig.json",
-      "node_modules/react",
-      "node_modules/react-dom",
-      "node_modules/scheduler"
-    ],
-    "mode": "background",
-    "offline": {
-      "features": [
-        "This machine's usage, read from its own session logs",
-        "Charts, sessions, search and export"
-      ],
-      "online": [
-        "Other machines' usage through the shared store",
-        "Codex plan limits"
-      ]
-    }
   }
 }

@@ -32,7 +32,8 @@ import type { Store } from "./store.ts";
  * and the page, the summary, the limits and the widget answer 404 with a line saying where the dashboard is.
  */
 
-export const VERSION = "0.1.0";
+/** The release, equal to package.json and space.release.yaml (src/release.test.ts checks). */
+export const VERSION = "0.2.0";
 
 export type ServerOptions = {
   pricing?: SpacePricing;

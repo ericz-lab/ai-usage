@@ -1,6 +1,6 @@
 # ai-usage - agent guide
 
-Read this before touching code. Users read [README.md](README.md). This repository is an ai-space app; the contract is ai-space `docs/app-spec.md` (spec 1) and `space.yaml` is the only file ai-space reads. It is also a default app of ai-space: a fresh space clones and installs it on `init`, so it must always run with no `.env` and no configuration.
+Read this before touching code. Users read [README.md](README.md). This repository is an ai-space app; the contract is ai-space `docs/app-spec.md` (spec 1) and `space.yaml` is what a git deployment reads; the installation package is declared by `space.release.yaml` (spec 2, below). It is also a default app of ai-space: a fresh space clones and installs it on `init`, so it must always run with no `.env` and no configuration.
 
 ## Rules
 
@@ -23,12 +23,13 @@ Read this before touching code. Users read [README.md](README.md). This reposito
 - Codex plan limits (`src/codex-limits.ts`, scheduled by `Limits` with `provider: "codex"`): read `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), call `https://chatgpt.com/backend-api/wham/usage` with the bearer token and account header, publish `<machine>/limits-codex.json`. Never refresh or rewrite credentials. Provider snapshots and status remain separate; older snapshots without a provider are Claude.
 - `USAGE_ROLE=collector` (`config.ts`): the shared store is publish-only and `server.ts` registers no page, summary or widget route (they answer 404 with a line). Status, refresh, export and healthz stay.
 - Without a shared store, peers are pulled after every scan (`src/peers.ts`): discovery through `SPACE_API_URL` (`GET /api/apps?all=1`, entries named `ai-usage` with a `peer`) plus `USAGE_PEERS`; each pull asks `/api/export?since=` from the newest row held for that machine minus two days; results are upserted and the outcome kept in `meta` (`peer:<name>`).
-- Runs as the user-level systemd unit `ai-usage` from `~/.ai-space/apps/ai-usage`, port 8880, health `GET /healthz`.
+- Runs as the user-level systemd unit `ai-usage` from `~/.ai-space/apps/ai-usage`, port 8880, health `GET /healthz`; as a package, a background child of the Space on the port it assigns.
 
 ## Directory map
 
 ```
 space.yaml           * the manifest: identity, service, widget, storage
+space.release.yaml   * the package's spec-2 declaration: the same components, launch and build
 src/index.ts         * entry point: serve, scan, today, stats
 src/scanner.ts       * Claude parser and incremental scanSources for both CLIs
 src/space-ledger.ts    readonly import of ephemeral Codex calls from the Space ledger
@@ -56,6 +57,8 @@ deploy/app.service     user-level systemd unit template (@DIR@ substituted)
 deploy/app.plist       macOS launchd agent template (@DIR@, @BUN@ substituted)
 deploy/install.sh      dependencies, unit or agent, start, health check; what ai-space runs after cloning
 deploy/post-receive    bare-repository hook for git-push deploys
+scripts/pack.ts        the packages locally: ai-space's `space app release`
+.github/workflows/release.yml  a `v*` tag: build, sign, GitHub release, catalog pull request
 icon.png               panel icon, 256x256, rounded square on a transparent ground
 .env.example           every variable the service reads
 ```
@@ -120,4 +123,8 @@ App pages load `/_space/usage.js` at runtime through the Space router. It record
 
 ## Installation package
 
-`bun run pack [-- --out DIR]` builds `<name>-<version>.spaceapp` (ai-space docs/app-packages.md) from this tree without changing it; `scripts/pack.ts` explains how. `space.yaml` stays spec 1 for the git deployment; the package's spec-2 manifest is made from it, with `version` from `package.json` and the files, launch mode and offline notes from `spacePackage` there. A package runs on a port ai-space assigns: nothing may assume the manifest's port (the package's entry writes the assigned one to `<data dir>/service.port`). Machine settings of a package install go in `<workspace>/data/<app>/.env`. Bump `version` for each package released; install with `space app install`, upgrade with `space app upgrade`. A machine is served by the git deployment or by a package, never both.
+The app ships through the ai-space app catalog as a signed package (ai-space docs/app-catalog.md). `space.release.yaml` is its spec-2 declaration: `space.yaml` stays spec 1 for the git deployment, and the components of the two must be the same (`src/release.test.ts`). Its `build:` section says how a checkout becomes the package: `bun install --frozen-lockfile`, then `bun run build` bundles `src/index.ts` and the page into `dist/` (`dist/index.js` is the launch entry; it chdirs to its own directory, serves its hashed favicon itself and applies `PACKAGE_DEFAULTS` from `src/config.ts`, the literal `service.env` of `space.yaml`, under the variables it is given), and the package carries `dist` and `icon.png`; the source package adds the source. It runs in `background` mode so scans and shared-store syncs keep their clock.
+
+As a package it still reads the Space user's own session logs (`~/.claude/projects`, `~/.codex`, `~/.dsh`; the Space passes no `HOME`, so the home comes from the account) and the workspace ledger it finds from `SPACE_APP_DATA_DIR`. Machine settings of a package install (`USAGE_SOURCES`, `USAGE_LIMITS`, `USAGE_MACHINE`, ...) go in `<workspace>/data/ai-usage/.env`.
+
+`bun run pack [-- --out DIR] [--sign-key FILE]` runs ai-space's `space app release` on this tree and writes `ai-usage-<version>.spaceapp` and `ai-usage-<version>-source.spaceapp`; the tree itself is never changed. To release: raise `version` in `space.release.yaml`, `package.json` and `VERSION` in `src/server.ts` together, commit, and push the tag `v<version>`: `.github/workflows/release.yml` builds, signs with the `SPACE_SIGN_KEY` secret, attaches both packages to the GitHub release and, with `CATALOG_TOKEN`, proposes the catalog entry. Install with `space app install ai-usage`, upgrade with `space app upgrade ai-usage`. A machine is served by the git deployment or by a package, never both.
