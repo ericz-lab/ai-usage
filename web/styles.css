@@ -129,6 +129,9 @@
 @container (max-width: 980px) {
   .board > .span-8,.board > .span-6,.board > .span-4 { grid-column:span 12 }
 }
+/* A new range or filter is loading: the figures on screen answer the previous one. A quick reply never dims. */
+.board { transition:opacity .15s ease-out }
+.sp-center[aria-busy="true"] .board { opacity:.55;transition-delay:.15s }
 
 /* a tile with a title and a hint */
 .card { padding:20px 24px 24px }

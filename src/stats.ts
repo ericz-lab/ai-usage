@@ -53,8 +53,31 @@ export function validTz(tz: string | undefined): string {
   }
 }
 
+type Parts = { y: number; m: number; d: number; h: number };
+
+/**
+ * Every zone's UTC offset is a whole number of quarter hours, so all instants in one UTC quarter hour share
+ * the zone's date and hour. `formatToParts` costs microseconds and a 90-day window holds hundreds of thousands
+ * of turns, so the parts are worked out once per quarter hour and kept (bounded) per zone.
+ */
+const QUARTER = 15 * 60_000;
+const PARTS_KEEP = 100_000;
+const partsCache = new Map<string, Map<number, Parts>>();
+function parts(ts: number, tz: string): Parts {
+  let seen = partsCache.get(tz);
+  if (!seen) partsCache.set(tz, (seen = new Map()));
+  const q = Math.floor(ts / QUARTER);
+  let p = seen.get(q);
+  if (!p) {
+    if (seen.size >= PARTS_KEEP) seen.clear();
+    p = formatParts(q * QUARTER, tz);
+    seen.set(q, p);
+  }
+  return p;
+}
+
 const fmtCache = new Map<string, Intl.DateTimeFormat>();
-function parts(ts: number, tz: string): { y: number; m: number; d: number; h: number } {
+function formatParts(ts: number, tz: string): Parts {
   let f = fmtCache.get(tz);
   if (!f) {
     f = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" });
