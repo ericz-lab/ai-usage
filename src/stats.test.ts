@@ -41,6 +41,28 @@ describe("time helpers", () => {
   });
 });
 
+describe("cached day and hour", () => {
+  // The parts are kept per UTC quarter hour; check that against Intl itself at every minute, in zones with
+  // half- and three-quarter-hour offsets and across a daylight-saving change.
+  const direct = (ts: number, tz: string) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(ts).map((x) => [x.type, x.value]));
+    return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour) % 24 };
+  };
+  test.each([
+    ["Asia/Kathmandu", "2026-09-19T18:00:00Z"],
+    ["Asia/Kolkata", "2026-09-19T18:00:00Z"],
+    ["Australia/Lord_Howe", "2026-10-03T14:00:00Z"],
+    ["America/New_York", "2026-11-01T04:00:00Z"],
+    ["Europe/London", "2026-10-25T00:00:00Z"],
+  ])("%s matches Intl minute by minute", (tz, start) => {
+    const t0 = Date.parse(start);
+    for (let ts = t0; ts < t0 + 4 * H; ts += 60_000) {
+      const want = direct(ts, tz);
+      expect({ day: dayKey(ts, tz), hour: hourOf(ts, tz) }).toEqual(want);
+    }
+  });
+});
+
 describe("summary", () => {
   test("today: totals, models, sessions, cost", () => {
     const s = summary(seeded(), { range: "today", tz: "UTC", now: NOW });
@@ -117,4 +139,17 @@ describe("summary", () => {
     expect(store.latestTurn("box2")).toBe(NOW - H);
     store.close();
   });
+});
+
+test("model and machine counts follow new turns", () => {
+  const store = seeded();
+  const before = store.models().find((m) => m.model === "claude-sonnet-5")!.turns;
+  store.write({ sessions: [], turns: [turn({ ts: NOW - 3 * H, messageId: "fresh" })], dispatches: [] }, undefined);
+  expect(store.models().find((m) => m.model === "claude-sonnet-5")!.turns).toBe(before + 1);
+  store.import("peer", { sessions: [], turns: [{ machine: "", session_id: "p1", ts: NOW, model: "claude-new-1", input: 1, output: 1, cache_read: 0, cache_write: 0, tool: null, message_id: "peer-1", subagent: 0, agent_id: null, service_tier: null }], agents: [] });
+  expect(store.models().some((m) => m.model === "claude-new-1")).toBe(true);
+  expect(store.machines().map((m) => m.machine)).toContain("peer");
+  // A caller that edits the list it got does not change the next one.
+  store.models()[0]!.turns = -1;
+  expect(store.models()[0]!.turns).toBeGreaterThan(0);
 });

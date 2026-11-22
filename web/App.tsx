@@ -395,19 +395,31 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
-  const load = useCallback(() => {
+  // The query the filters ask for, and the one the summary on screen answers: while they differ the board is
+  // dimmed. Each reply lands only if it answers the newest load, so a slow 90-day reply cannot overwrite the
+  // 7-day one asked for after it. Status and limits arrive on their own and never hold the summary back.
+  const query = useMemo(() => {
     const p = new URLSearchParams({ range, tz });
     if (models.length) p.set("models", models.join(","));
     if (machines.length) p.set("machines", machines.join(","));
-    return Promise.all([getJson<Summary>(`/api/summary?${p}`), getJson<Status>("/api/status"), getJson<LimitsReply>("/api/limits").catch(() => null)])
-      .then(([s, st, lim]) => {
-        setSummary(s);
-        setStatus(st);
-        if (lim) setLimits(lim.snapshots);
-        setErr("");
-      })
-      .catch((e) => setErr(String((e as Error).message || e)));
+    return p.toString();
   }, [range, models, machines, tz]);
+  const [shown, setShown] = useState("");
+  const latest = useRef(0);
+  const load = useCallback(() => {
+    const n = ++latest.current;
+    const fail = (e: unknown) => n === latest.current && setErr(String((e as Error).message || e));
+    return Promise.all([
+      getJson<Summary>(`/api/summary?${query}`).then((s) => {
+        if (n !== latest.current) return;
+        setSummary(s);
+        setShown(query);
+        setErr("");
+      }, fail),
+      getJson<Status>("/api/status").then((st) => n === latest.current && setStatus(st), fail),
+      getJson<LimitsReply>("/api/limits").then((lim) => n === latest.current && setLimits(lim.snapshots), () => {}),
+    ]);
+  }, [query]);
 
   useEffect(() => {
     writeParams(range, models, machines, lang);
@@ -742,7 +754,7 @@ export default function App() {
         </nav>
 
         <div className="sp-work">
-          <main className="sp-center">
+          <main className="sp-center" aria-busy={!!summary && shown !== query}>
             <div className="sp-mbar">
               <button type="button" className="sp-icon-btn" onClick={() => setNavOpen(true)} aria-label={t("navOpen")} aria-controls="side" aria-expanded={navOpen}>
                 <Icon name="menu" />

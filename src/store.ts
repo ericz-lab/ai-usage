@@ -149,6 +149,7 @@ export class Store {
       for (const d of parsed.dispatches) this.upsertDispatch("", d);
       if (file) this.db.query("INSERT OR REPLACE INTO files (path, source, size, mtime, offset) VALUES (?, ?, ?, ?, ?)").run(file.path, file.source, file.size, file.mtime, file.offset);
     })();
+    if (parsed.turns.length) this.counted = {};
   }
 
   /** Rows pulled from a peer, labelled with the name this hub gives it. */
@@ -175,6 +176,7 @@ export class Store {
       for (const a of x.agents)
         this.upsertDispatch(machine, { agentId: a.agent_id, agentType: a.agent_type, sessionId: a.session_id, completedAt: a.completed_at, status: a.status, totalTokens: a.total_tokens, durationMs: a.duration_ms, toolUses: a.tool_uses });
     })();
+    if (x.turns.length) this.counted = {};
   }
 
   private upsertSession(machine: string, s: SessionMeta): void {
@@ -244,14 +246,22 @@ export class Store {
     return this.db.query<{ ts: number | null }, [string]>("SELECT MAX(ts) AS ts FROM turns WHERE machine = ?").get(machine)?.ts ?? 0;
   }
 
+  /**
+   * models() and machines() count every turn ever stored, a full scan each; every summary asks for both. They
+   * are kept until write() or import() changes the turns.
+   */
+  private counted: { models?: { model: string; turns: number }[]; machines?: { machine: string; turns: number }[] } = {};
+
   /** Every model ever seen with its turn count, busiest first. */
   models(): { model: string; turns: number }[] {
-    return this.db.query<{ model: string; turns: number }, []>("SELECT model, COUNT(*) AS turns FROM turns GROUP BY model ORDER BY turns DESC, model").all();
+    this.counted.models ??= this.db.query<{ model: string; turns: number }, []>("SELECT model, COUNT(*) AS turns FROM turns GROUP BY model ORDER BY turns DESC, model").all();
+    return this.counted.models.map((m) => ({ ...m }));
   }
 
   /** Every machine with rows, '' being this one, busiest first. */
   machines(): { machine: string; turns: number }[] {
-    return this.db.query<{ machine: string; turns: number }, []>("SELECT machine, COUNT(*) AS turns FROM turns GROUP BY machine ORDER BY (machine = '') DESC, turns DESC, machine").all();
+    this.counted.machines ??= this.db.query<{ machine: string; turns: number }, []>("SELECT machine, COUNT(*) AS turns FROM turns GROUP BY machine ORDER BY (machine = '') DESC, turns DESC, machine").all();
+    return this.counted.machines.map((m) => ({ ...m }));
   }
 
   counts(): { files: number; sessions: number; turns: number; firstTs: number | null; lastTs: number | null } {
