@@ -7,7 +7,7 @@
 
 spec: 2
 name: ai-usage
-version: 0.2.0
+version: 0.2.1
 title: AI Usage
 description: What Claude Code, Codex and DeepSeek Harness spent on this machine and its peers, read from each tool's own session logs. Tokens, cost estimates, models, projects, sessions and subagents.
 icon: icon.png
