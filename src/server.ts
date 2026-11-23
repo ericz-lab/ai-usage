@@ -33,7 +33,7 @@ import type { Store } from "./store.ts";
  */
 
 /** The release, equal to package.json and space.release.yaml (src/release.test.ts checks). */
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.1";
 
 export type ServerOptions = {
   pricing?: SpacePricing;

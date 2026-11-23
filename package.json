@@ -1,6 +1,6 @@
 {
   "name": "ai-usage",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AI usage dashboard for one machine: what Claude Code, Codex and DeepSeek Harness spent, read from their own session logs. An ai-space app.",
   "license": "MIT",
   "type": "module",
