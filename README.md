@@ -40,7 +40,7 @@ Without a bucket the older path still works: `USAGE_PEERS=box2=http://127.0.0.1:
 
 ## Cost estimates
 
-At Anthropic API list prices as of June 2026 (`src/pricing.ts`), per million tokens:
+Claude models are priced per model id at the Anthropic list prices ai-space serves with its GPT prices (`/api/model/pricing`, from ai-space's price module: its published catalogue and models.dev, refreshed daily), long-context prices included; the date shows in the footer. A Claude id ai-space does not list, or any Claude model when ai-space is unreachable and nothing is cached, falls back to the family table below, the Anthropic API list prices as of June 2026 (`src/pricing.ts`), per million tokens:
 
 | Family | Input | Output | Cache write | Cache read |
 | --- | --- | --- | --- | --- |
@@ -49,14 +49,14 @@ At Anthropic API list prices as of June 2026 (`src/pricing.ts`), per million tok
 | sonnet | $3 | $15 | $3.75 | $0.30 |
 | haiku | $1 | $5 | $1.25 | $0.10 |
 
-DeepSeek models use DeepSeek's list prices at peak, per million tokens:
+DeepSeek models are priced per model id at the DeepSeek list prices ai-space serves (`/api/model/pricing`, `deepseek`); a DeepSeek id ai-space does not list, or an older ai-space, falls back to DeepSeek's list prices at peak, per million tokens:
 
 | Model | Input | Output | Cache write | Cache read |
 | --- | --- | --- | --- | --- |
 | `deepseek-flash`, `deepseek-v4-flash` | $0.30 | $1.20 | $0.30 | $0.006 |
 | `deepseek-v4-pro` | $1.32 | $3.96 | $1.32 | $0.044 |
 
-A model is priced by the family name its id contains (Anthropic) or by its id (DeepSeek); anything else (local models, `<synthetic>`, unknown ids) shows as n/a, never as zero. On a Pro or Max plan the figure is what the same usage would cost on the API, not a bill. DeepSeek's off-peak discount is not modelled: the session log does not retain per-request billing windows, so the estimate stays at peak rates.
+Otherwise a model is priced by the family name its id contains (Anthropic) or by its id (DeepSeek); anything else (local models, `<synthetic>`, unknown ids) shows as n/a, never as zero. On a Pro or Max plan the figure is what the same usage would cost on the API, not a bill. DeepSeek's off-peak discount is not modelled: the session log does not retain per-request billing windows, so the estimate stays at peak rates.
 
 ## Run
 

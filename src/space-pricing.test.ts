@@ -73,3 +73,21 @@ test("sends the app token as a bearer header only when one is given", async () =
     expect(seen).toEqual(["Bearer app-secret", null, null]);
   } finally { store.close(); }
 });
+
+test("the Anthropic section is optional, kept through the cache, and a bad one never costs the GPT rates", async () => {
+  const anthropic = { source: "https://models.dev", fetchedAt: "2026-11-24T12:00:00.000Z", unitTokens: 1_000_000, models: {
+    "claude-opus-5-5": { input: 4, cacheWrite: 5, cacheRead: 0.2, output: 20, longContext: null },
+    "claude-bad": { input: -1, cacheWrite: 5, cacheRead: 0.2, output: 20, longContext: null },
+    "not-claude": { input: 1, cacheWrite: 1, cacheRead: 1, output: 1, longContext: null },
+  } };
+  const parsed = parseCatalog({ ...testCatalog, filled: {}, anthropic });
+  expect(Object.keys(parsed.anthropic!.models)).toEqual(["claude-opus-5-5"]);
+  expect(parseCatalog({ ...testCatalog, anthropic: { ...anthropic, unitTokens: 1000 } }).anthropic).toBeUndefined();
+  expect(parseCatalog({ ...testCatalog, anthropic: "nonsense" }).models).toEqual(testCatalog.models);
+  const store = new Store(":memory:");
+  try {
+    await new SpacePricing({ store, fetch: (async () => Response.json({ ...testCatalog, anthropic })) as unknown as typeof fetch }).refresh();
+    const cached = new SpacePricing({ store, fetch: (async () => { throw new Error("offline"); }) as unknown as typeof fetch });
+    expect(costOf("claude-opus-5-5", { input: 1_000_000, cacheWrite: 0, cacheRead: 0, output: 0 }, cached.catalog)).toBe(4);
+  } finally { store.close(); }
+});

@@ -3,7 +3,7 @@ import type { SpacePricing } from "./space-pricing.ts";
 import type { Config } from "./config.ts";
 import type { Limit, Limits, LimitsSnapshot } from "./limits.ts";
 import type { Peers } from "./peers.ts";
-import { PRICING_AS_OF, shortModel } from "./pricing.ts";
+import { pricingAsOf, shortModel } from "./pricing.ts";
 import type { ScanResult } from "./scanner.ts";
 import type { Shared } from "./shared.ts";
 import { RANGES, type Range, type Summary, startOfDay, summary, validTz } from "./stats.ts";
@@ -205,7 +205,7 @@ export function createApp(opts: ServerOptions) {
     version: VERSION,
     machine,
     role: config.role,
-    pricingAsOf: `${PRICING_AS_OF} / OpenAI ${opts.pricing?.catalog?.asOf ?? "unavailable"}`,
+    pricingAsOf: pricingAsOf(opts.pricing?.catalog),
     gptPricing: opts.pricing?.state() ?? null,
     sources: [...config.sources, ...(config.deepseek && existsSync(config.deepseek.dir) ? [config.deepseek.dir] : [])],
     deepseek: config.deepseek ? { dir: config.deepseek.dir, found: existsSync(config.deepseek.dir) } : null,

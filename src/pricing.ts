@@ -1,16 +1,17 @@
 import type { GptCatalog } from "./space-pricing.ts";
 /**
- * API-equivalent cost estimates. GPT prices come from ai-space.
- * Anthropic API list prices (claude.com/pricing#api, June
- * 2026), and DeepSeek list prices at peak, in dollars per million tokens.
- * A model is priced by the family name its id contains (Anthropic) or by its
- * id (DeepSeek); anything else (local models, `<synthetic>`, unknown ids) has
- * no price and shows as "n/a" rather than as zero. Subscription plans are
- * flat-rate, so for them the figure is what the same usage would have cost on
- * the API, not a bill.
+ * API-equivalent cost estimates, in dollars per million tokens. GPT prices come from ai-space.
+ * Anthropic and DeepSeek prices too, per model id, when ai-space serves them (its price module);
+ * otherwise, and for a model it does not list, the family name the id contains picks a price
+ * below (claude.com/pricing#api, June 2026); DeepSeek's by id at peak. These tables are only the
+ * fallback for an older Space. Anything else
+ * (local models, `<synthetic>`, unknown ids) has no price and shows as "n/a" rather than as zero.
+ * Subscription plans are flat-rate, so for them the figure is what the same usage would have cost
+ * on the API, not a bill.
  */
 
-export type Price = { input: number; output: number; cacheWrite: number | null; cacheRead: number };
+export type Price = { input: number; output: number; cacheWrite: number | null; cacheRead: number;
+  longContext?: { threshold: number; inputMultiplier: number; outputMultiplier: number } | null };
 export type TokenUsage = { input: number; output: number; cacheRead: number; cacheWrite: number; serviceTier?: string | null };
 
 /** First match wins; more specific names first. */
@@ -37,12 +38,26 @@ export const DEEPSEEK_PRICES: Record<string, Price> = {
 
 /** GPT dates come from the cached ai-space catalogue. */
 export const PRICING_AS_OF = "Anthropic 2026-06 · DeepSeek peak list";
+/** What the status line says about the prices in use. */
+export function pricingAsOf(catalog?: GptCatalog): string {
+  const claude = catalog?.anthropic ? `Anthropic from ai-space ${catalog.anthropic.fetchedAt.slice(0, 10)}, else 2026-06` : "Anthropic 2026-06";
+  const deepseek = catalog?.deepseek ? `DeepSeek from ai-space ${catalog.deepseek.fetchedAt.slice(0, 10)}` : "DeepSeek peak list";
+  return `${claude} · ${deepseek} / OpenAI ${catalog?.asOf ?? "unavailable"}`;
+}
 const openaiModel = (model: string) => model.toLowerCase().replace(/-\d{4}-\d{2}-\d{2}$/, "");
+
+/** ai-space's Anthropic price for this id, or for the id without its `-20251001` snapshot date. */
+function claudeListed(m: string, catalog?: GptCatalog): Price | undefined {
+  const listed = catalog?.anthropic?.models;
+  return listed ? listed[m] ?? listed[m.replace(/-\d{8}$/, "")] : undefined;
+}
 
 export function priceFor(model: string, catalog?: GptCatalog): Price | null {
   const m = model.toLowerCase();
   if (m.startsWith("gpt-")) return catalog?.models[openaiModel(m)] ?? null;
-  if (m.startsWith("deepseek-")) return DEEPSEEK_PRICES[m] ?? null;
+  if (m.startsWith("deepseek-")) return catalog?.deepseek?.models[m] ?? DEEPSEEK_PRICES[m] ?? null;
+  const listed = m.startsWith("claude-") ? claudeListed(m, catalog) : undefined;
+  if (listed) return listed;
   for (const { family, price } of PRICES) if (m.includes(family)) return price;
   return null;
 }
@@ -62,7 +77,10 @@ export function costOf(model: string, u: TokenUsage, catalog?: GptCatalog): numb
     return ((u.input * rate.input + u.cacheWrite * (rate.cacheWrite ?? 0) + u.cacheRead * rate.cacheRead) * (long?.inputMultiplier ?? 1)
       + u.output * rate.output * (long?.outputMultiplier ?? 1)) * (fast ? rate.fastMultiplier! : 1) / catalog!.unitTokens;
   }
-  return (u.input * p.input + u.output * p.output + u.cacheWrite * (p.cacheWrite ?? 0) + u.cacheRead * p.cacheRead) / 1e6;
+  if (u.cacheWrite > 0 && p.cacheWrite === null) return null;
+  const long = p.longContext && u.input + u.cacheRead + u.cacheWrite > p.longContext.threshold ? p.longContext : null;
+  return ((u.input * p.input + u.cacheWrite * (p.cacheWrite ?? 0) + u.cacheRead * p.cacheRead) * (long?.inputMultiplier ?? 1)
+    + u.output * p.output * (long?.outputMultiplier ?? 1)) / 1e6;
 }
 
 /** `claude-haiku-4-5-20251001` -> `haiku 4.5`, `claude-fable-5-1` -> `fable 5.1`; DeepSeek ids get their catalogue name; unknown shapes are returned as is. */
