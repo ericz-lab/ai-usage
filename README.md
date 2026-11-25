@@ -40,7 +40,7 @@ Without a bucket the older path still works: `USAGE_PEERS=box2=http://127.0.0.1:
 
 ## Cost estimates
 
-Claude models are priced per model id at the Anthropic list prices ai-space serves with its GPT prices (`/api/model/pricing`, from models.dev's catalogue, refreshed daily), long-context prices included; the date shows in the footer. A Claude id ai-space does not list, or any Claude model when ai-space is unreachable and nothing is cached, falls back to the family table below, the Anthropic API list prices as of June 2026 (`src/pricing.ts`), per million tokens:
+Claude models are priced per model id at the Anthropic list prices ai-space serves with its GPT prices (`/api/model/pricing`, from ai-space's price module: its published catalogue and models.dev, refreshed daily), long-context prices included; the date shows in the footer. A Claude id ai-space does not list, or any Claude model when ai-space is unreachable and nothing is cached, falls back to the family table below, the Anthropic API list prices as of June 2026 (`src/pricing.ts`), per million tokens:
 
 | Family | Input | Output | Cache write | Cache read |
 | --- | --- | --- | --- | --- |
@@ -49,7 +49,7 @@ Claude models are priced per model id at the Anthropic list prices ai-space serv
 | sonnet | $3 | $15 | $3.75 | $0.30 |
 | haiku | $1 | $5 | $1.25 | $0.10 |
 
-DeepSeek models use DeepSeek's list prices at peak, per million tokens:
+DeepSeek models are priced per model id at the DeepSeek list prices ai-space serves (`/api/model/pricing`, `deepseek`); a DeepSeek id ai-space does not list, or an older ai-space, falls back to DeepSeek's list prices at peak, per million tokens:
 
 | Model | Input | Output | Cache write | Cache read |
 | --- | --- | --- | --- | --- |
