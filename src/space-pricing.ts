@@ -6,10 +6,33 @@ export type GptPrice = {
   longContext: { threshold: number; inputMultiplier: number; outputMultiplier: number } | null;
   fastMultiplier: number | null;
 };
+/** An Anthropic list price from ai-space (models.dev's catalogue): the GPT shape without the Fast multiplier. */
+export type ClaudePrice = Omit<GptPrice, "fastMultiplier">;
 export type GptCatalog = {
   version: 1; asOf: string; currency: "USD"; unitTokens: number; source: string;
   models: Record<string, GptPrice>;
+  /** Newer ai-space only; absent until its models.dev catalogue is cached. */
+  anthropic?: { source: string; fetchedAt: string; unitTokens: 1_000_000; models: Record<string, ClaudePrice> };
 };
+
+const isObject = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+const isRate = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x) && x >= 0;
+const validLong = (l: unknown) => l === null || (isObject(l) && isRate(l.threshold) && l.threshold > 0 &&
+  isRate(l.inputMultiplier) && l.inputMultiplier > 0 && isRate(l.outputMultiplier) && l.outputMultiplier > 0);
+
+/** The optional Anthropic section, or undefined when it is missing or malformed: it never costs the GPT rates. */
+export function parseAnthropic(raw: unknown): GptCatalog["anthropic"] {
+  if (!isObject(raw) || raw.unitTokens !== 1_000_000 || typeof raw.source !== "string" || typeof raw.fetchedAt !== "string" ||
+      !isObject(raw.models) || Object.keys(raw.models).length > 500) return undefined;
+  const models: Record<string, ClaudePrice> = {};
+  for (const [id, p] of Object.entries(raw.models)) {
+    if (!/^claude-[a-z0-9.-]+$/.test(id) || !isObject(p) || ![p.input, p.cacheRead, p.output].every(isRate) ||
+        !(p.cacheWrite === null || isRate(p.cacheWrite)) || !validLong(p.longContext)) continue;
+    models[id] = { input: p.input as number, cacheRead: p.cacheRead as number, output: p.output as number,
+      cacheWrite: p.cacheWrite as number | null, longContext: p.longContext as ClaudePrice["longContext"] };
+  }
+  return Object.keys(models).length ? { source: raw.source, fetchedAt: raw.fetchedAt, unitTokens: 1_000_000, models } : undefined;
+}
 
 export function parseCatalog(raw: unknown): GptCatalog {
   const object = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
@@ -25,7 +48,9 @@ export function parseCatalog(raw: unknown): GptCatalog {
         !number(p.longContext.inputMultiplier) || p.longContext.inputMultiplier <= 0 || !number(p.longContext.outputMultiplier) || p.longContext.outputMultiplier <= 0))
       throw new Error("invalid GPT long-context price");
   }
-  return raw as GptCatalog;
+  const { anthropic, ...gpt } = raw as GptCatalog & { anthropic?: unknown };
+  const claude = parseAnthropic(anthropic);
+  return { ...(gpt as Omit<GptCatalog, "anthropic">), ...(claude ? { anthropic: claude } : {}) };
 }
 
 /** Cache successful catalogues across restarts; outages never replace good prices. */
