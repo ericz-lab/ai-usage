@@ -49,3 +49,15 @@ test("Claude models take ai-space's list price per id, the family table only for
   expect(estimate("claude-sonnet-9", { input: 1, cacheRead: 0, cacheWrite: 1, output: 0 }, catalog)).toBeNull();
   expect(estimate("claude-fable-9", { input: m, cacheRead: 0, cacheWrite: 0, output: 0 }, catalog)).toBe(10); // not listed: family
 });
+
+test("DeepSeek models take ai-space's list price per id, the table only for an older Space", () => {
+  const catalog = { ...testCatalog, deepseek: { source: "https://api-docs.deepseek.com", fetchedAt: "2026-11-25T00:00:00.000Z", unitTokens: 1_000_000 as const, models: {
+    "deepseek-flash": { input: 0.28, cacheWrite: 0.28, cacheRead: 0.006, output: 1.2, longContext: null },
+    "deepseek-v5": { input: 2, cacheWrite: 2, cacheRead: 0.1, output: 8, longContext: null },
+  } } };
+  const m = 1_000_000;
+  expect(estimate("deepseek-flash", { input: m, cacheRead: 0, cacheWrite: 0, output: 0 }, catalog)).toBeCloseTo(0.28);
+  expect(estimate("deepseek-v5", { input: m, cacheRead: 0, cacheWrite: 0, output: m }, catalog)).toBeCloseTo(10);
+  expect(estimate("deepseek-v4-pro", { input: m, cacheRead: 0, cacheWrite: 0, output: 0 }, catalog)).toBeCloseTo(1.32); // not listed: the table
+  expect(estimate("deepseek-flash", { input: m, cacheRead: 0, cacheWrite: 0, output: 0 })).toBeCloseTo(0.3); // an older Space
+});

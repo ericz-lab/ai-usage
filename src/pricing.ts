@@ -1,9 +1,10 @@
 import type { GptCatalog } from "./space-pricing.ts";
 /**
  * API-equivalent cost estimates, in dollars per million tokens. GPT prices come from ai-space.
- * Anthropic prices too, per model id, when ai-space serves them (models.dev's catalogue);
+ * Anthropic and DeepSeek prices too, per model id, when ai-space serves them (its price module);
  * otherwise, and for a model it does not list, the family name the id contains picks a price
- * below (claude.com/pricing#api, June 2026). DeepSeek list prices at peak, by id. Anything else
+ * below (claude.com/pricing#api, June 2026); DeepSeek's by id at peak. These tables are only the
+ * fallback for an older Space. Anything else
  * (local models, `<synthetic>`, unknown ids) has no price and shows as "n/a" rather than as zero.
  * Subscription plans are flat-rate, so for them the figure is what the same usage would have cost
  * on the API, not a bill.
@@ -39,8 +40,9 @@ export const DEEPSEEK_PRICES: Record<string, Price> = {
 export const PRICING_AS_OF = "Anthropic 2026-06 · DeepSeek peak list";
 /** What the status line says about the prices in use. */
 export function pricingAsOf(catalog?: GptCatalog): string {
-  const claude = catalog?.anthropic ? `Anthropic models.dev ${catalog.anthropic.fetchedAt.slice(0, 10)}, else 2026-06 · DeepSeek peak list` : PRICING_AS_OF;
-  return `${claude} / OpenAI ${catalog?.asOf ?? "unavailable"}`;
+  const claude = catalog?.anthropic ? `Anthropic from ai-space ${catalog.anthropic.fetchedAt.slice(0, 10)}, else 2026-06` : "Anthropic 2026-06";
+  const deepseek = catalog?.deepseek ? `DeepSeek from ai-space ${catalog.deepseek.fetchedAt.slice(0, 10)}` : "DeepSeek peak list";
+  return `${claude} · ${deepseek} / OpenAI ${catalog?.asOf ?? "unavailable"}`;
 }
 const openaiModel = (model: string) => model.toLowerCase().replace(/-\d{4}-\d{2}-\d{2}$/, "");
 
@@ -53,7 +55,7 @@ function claudeListed(m: string, catalog?: GptCatalog): Price | undefined {
 export function priceFor(model: string, catalog?: GptCatalog): Price | null {
   const m = model.toLowerCase();
   if (m.startsWith("gpt-")) return catalog?.models[openaiModel(m)] ?? null;
-  if (m.startsWith("deepseek-")) return DEEPSEEK_PRICES[m] ?? null;
+  if (m.startsWith("deepseek-")) return catalog?.deepseek?.models[m] ?? DEEPSEEK_PRICES[m] ?? null;
   const listed = m.startsWith("claude-") ? claudeListed(m, catalog) : undefined;
   if (listed) return listed;
   for (const { family, price } of PRICES) if (m.includes(family)) return price;
