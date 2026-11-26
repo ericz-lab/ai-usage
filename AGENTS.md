@@ -38,6 +38,7 @@ src/deepseek-scanner.ts DeepSeek Harness zstd/JSONL session logs -> turns and to
 src/store.ts         * bun:sqlite schema, upserts, the queries stats needs, export/import for peers
 src/stats.ts         * summary(): one window, one model and machine filter, one time zone -> everything the page shows
 src/server.ts        * routes: /api/summary, /api/status, /api/refresh, /api/export, /api/limits, /api/widget, /healthz, /icon.png
+src/widget.ts        * the panel card: items, blocks and the today / 7 days / 30 days views, from summary()
 src/shared.ts        * the shared store: object-store interface (S3 and in-memory), publish, pull
 src/limits.ts          plan usage limits: read the CLI's login, fetch /api/oauth/usage, publish and merge snapshots
 src/codex-limits.ts    native Codex login and subscription-window parsing
@@ -66,7 +67,7 @@ icon.png               panel icon, 256x256, rounded square on a transparent grou
 ## Conventions
 
 - Tests sit next to the code (`src/*.test.ts`), use `:memory:` databases, temporary directories and a scripted `fetch`; no network, no real transcripts.
-- Widget contract: `GET /api/widget` -> `{ ok: true, items: [{ text, url, time }], asOf, staleAfter, blocks }`. `items` stays for older panels; `blocks` (ai-space docs/app-spec.md, "Blocks") is built by `widgetBlocks()` from the same summaries: today's cost (delta vs the 7 full days before today, only when history reaches back that far), 7-day cost bars (a day without turns or with an unpriced model is null), Codex weekly percent used, today's tokens and sessions, top model.
+- Widget contract: `GET /api/widget` -> `{ ok: true, items: [{ text, url, time }], asOf, staleAfter, blocks, views }`, built by `widgetPayload()` in `src/widget.ts` from stats.ts `summary()`. `items` stays for older panels; `blocks` (ai-space docs/app-spec.md, "Blocks") is built by `widgetBlocks()`: today's cost (delta vs the 7 full days before today, only when history reaches back that far), 7-day cost bars (a day without turns or with an unpriced model is null), Codex weekly percent used, today's tokens and sessions, top model. `views` (the widget interactions contract) are `today` (equal to `blocks`), `7d` and `30d`; a range view (`rangeBlocks()`) is the range's cost (delta vs the same number of days before it, only when history reaches the first of them), its daily cost bars, its tokens and sessions, then the Codex quota and the range's top model.
 - Shared-store contract: a machine's directory is its name; `manifest.json` lists `files: { path: { hash, rows } }`; hashes are `Bun.hash` of the file text. A reader skips a file whose hash it already imported. Only this machine's own rows are published, never rows pulled from others.
 - Export contract: `GET /api/export?since=<ms>` -> `{ ok, machine, sessions, turns, agents }` with the store's row shapes; only rows scanned here (`machine = ''`), never rows pulled from elsewhere, so a chain of hubs cannot double count.
 - Series colours: a model's slot is its index in the all-time model list (`summary.models`), not in the filtered one, so filtering never repaints. Past eight slots everything folds into "other".
